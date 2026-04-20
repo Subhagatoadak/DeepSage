@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(gh repo *)",
+      "Bash(cargo check *)",
+      "Bash(rustup update *)"
+    ]
+  }
+}

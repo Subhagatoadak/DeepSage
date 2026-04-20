@@ -1,0 +1,30 @@
+[package]
+name = "deepsage"
+version = "0.1.0"
+edition = "2021"
+description = "Configure, run, manage, and monitor open source LLM models"
+license = "MIT"
+repository = "https://github.com/subhagatoadak/DeepSage"
+
+[[bin]]
+name = "deepsage"
+path = "src/main.rs"
+
+[dependencies]
+anyhow       = "1"
+clap         = { version = "4", features = ["derive"] }
+crossterm    = "0.28"
+directories  = "5"
+futures-util = "0.3"
+ratatui      = "0.29"
+reqwest      = { version = "0.12", features = ["json", "stream"] }
+serde        = { version = "1", features = ["derive"] }
+serde_json   = "1"
+sysinfo      = "0.32"
+thiserror    = "1"
+tokio        = { version = "1", features = ["full"] }
+tokio-util   = { version = "0.7", features = ["io"] }
+toml         = "0.8"
+uuid         = { version = "1", features = ["v4"] }
+which        = "6"
+chrono       = { version = "0.4", features = ["serde"] }
