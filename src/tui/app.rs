@@ -17,6 +17,7 @@ pub enum Tab {
 }
 
 impl Tab {
+    #[allow(dead_code)]
     pub const ALL: &'static [Tab] = &[Tab::Dashboard, Tab::Models, Tab::System, Tab::Logs];
     pub const NAMES: &'static [&'static str] = &["Dashboard", "Models", "System", "Logs"];
 
@@ -50,6 +51,11 @@ pub struct App {
     pub system_info: Option<SystemInfo>,
     pub registry: Registry,
 
+    // Server status (polled from server.json + /health)
+    pub server_running: bool,
+    pub server_port: u16,
+    pub server_active_model: String,
+
     // Models tab
     pub models_table: TableState,
     pub search_query: String,
@@ -77,6 +83,9 @@ impl App {
             recommendations: vec![],
             system_info: None,
             registry,
+            server_running: false,
+            server_port: 8888,
+            server_active_model: String::new(),
             models_table: TableState::default(),
             search_query: String::new(),
             search_mode: false,

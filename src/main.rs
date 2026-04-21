@@ -8,6 +8,7 @@ mod download;
 mod hardware;
 mod monitor;
 mod registry;
+mod server;
 mod tui;
 
 #[derive(Parser)]
@@ -32,6 +33,16 @@ enum Cmd {
         /// Number of recommendations to display
         #[arg(short, long, default_value_t = 5)]
         n: usize,
+    },
+
+    /// Pick a model from llmfit recommendations, download it, and register it automatically
+    Pick {
+        /// Number of recommendations to show
+        #[arg(short, long, default_value_t = 10)]
+        n: usize,
+        /// Automatically select this number from the list (skips the prompt)
+        #[arg(short, long)]
+        index: Option<usize>,
     },
 
     /// List registered and running models
@@ -117,9 +128,34 @@ enum Cmd {
         file: Option<String>,
     },
 
+    /// Show the inference endpoint URL for the active (or named) model
+    Endpoint {
+        /// Model name (defaults to active model)
+        model: Option<String>,
+    },
+
+    /// Send a prompt to the active model and print the response
+    Infer {
+        /// The prompt text
+        prompt: String,
+        /// Model name (defaults to active model)
+        #[arg(short, long)]
+        model: Option<String>,
+    },
+
     /// Search the llmfit model database
     Search {
         query: String,
+    },
+
+    /// Start the OpenAI-compatible inference server
+    Serve {
+        /// Host to bind (default: 127.0.0.1)
+        #[arg(long, default_value = "127.0.0.1")]
+        host: String,
+        /// Port to listen on (default: 8888)
+        #[arg(short, long, default_value_t = 8888)]
+        port: u16,
     },
 
     /// Show hardware information detected by llmfit
@@ -156,6 +192,7 @@ async fn main() -> Result<()> {
     match cli.command {
         None | Some(Cmd::Tui)                   => tui::run(cfg).await,
         Some(Cmd::Recommend { n })               => commands::recommend(n, &cfg).await,
+        Some(Cmd::Pick { n, index })             => commands::pick(n, index, &cfg).await,
         Some(Cmd::List { running })              => commands::list(running, &cfg).await,
         Some(Cmd::Register { name, source, backend, quantization }) => {
             commands::register(&name, &source, backend.as_deref(), quantization.as_deref(), &cfg)
@@ -168,6 +205,9 @@ async fn main() -> Result<()> {
         Some(Cmd::Stop { model })                => commands::stop_model(&model, &cfg).await,
         Some(Cmd::Pull { model })                => commands::pull_model(&model, &cfg).await,
         Some(Cmd::Download { source, file })     => commands::download(&source, file.as_deref(), &cfg).await,
+        Some(Cmd::Serve { host, port })          => server::serve(&host, port, cfg).await,
+        Some(Cmd::Endpoint { model })            => commands::endpoint(model.as_deref(), &cfg).await,
+        Some(Cmd::Infer { prompt, model })       => commands::infer(&prompt, model.as_deref(), &cfg).await,
         Some(Cmd::Search { query })              => commands::search(&query, &cfg).await,
         Some(Cmd::System)                        => commands::system_info(&cfg).await,
         Some(Cmd::Monitor)                       => commands::monitor(&cfg).await,

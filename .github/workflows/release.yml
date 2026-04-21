@@ -4,6 +4,11 @@ on:
   push:
     tags:
       - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Version tag (e.g. v0.1.0)"
+        required: true
 
 permissions:
   contents: write
@@ -19,7 +24,7 @@ jobs:
           - target: aarch64-apple-darwin
             os: macos-latest
           - target: x86_64-apple-darwin
-            os: macos-latest
+            os: macos-13            # last Intel runner
           - target: aarch64-unknown-linux-gnu
             os: ubuntu-latest
             cross: true
@@ -36,43 +41,53 @@ jobs:
         with:
           targets: ${{ matrix.target }}
 
-      - name: Install cross (for cross-compilation)
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-${{ matrix.target }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Install cross
         if: matrix.cross == true
-        run: cargo install cross --git https://github.com/cross-rs/cross
+        uses: taiki-e/install-action@cross
 
       - name: Build
+        shell: bash
         run: |
           if [ "${{ matrix.cross }}" = "true" ]; then
             cross build --release --target ${{ matrix.target }}
           else
             cargo build --release --target ${{ matrix.target }}
           fi
-        shell: bash
 
       - name: Package (Unix)
         if: runner.os != 'Windows'
+        shell: bash
         run: |
-          TAG="${GITHUB_REF_NAME}"
-          BINARY="target/${{ matrix.target }}/release/deepsage"
+          TAG="${{ github.ref_name || inputs.tag }}"
           ARCHIVE="deepsage-${TAG}-${{ matrix.target }}.tar.gz"
           tar -czf "${ARCHIVE}" -C "target/${{ matrix.target }}/release" deepsage
-          echo "ARCHIVE=${ARCHIVE}" >> $GITHUB_ENV
-          sha256sum "${ARCHIVE}" > "${ARCHIVE}.sha256"
+          shasum -a 256 "${ARCHIVE}" > "${ARCHIVE}.sha256"
+          echo "ARCHIVE=${ARCHIVE}" >> "$GITHUB_ENV"
 
       - name: Package (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          $TAG = $env:GITHUB_REF_NAME
+          $TAG = "${{ github.ref_name || inputs.tag }}"
           $ARCHIVE = "deepsage-$TAG-${{ matrix.target }}.zip"
           Compress-Archive -Path "target\${{ matrix.target }}\release\deepsage.exe" -DestinationPath $ARCHIVE
-          echo "ARCHIVE=$ARCHIVE" >> $env:GITHUB_ENV
           $hash = (Get-FileHash $ARCHIVE -Algorithm SHA256).Hash.ToLower()
-          "$hash  $ARCHIVE" | Out-File "$ARCHIVE.sha256"
+          "$hash  $ARCHIVE" | Out-File "$ARCHIVE.sha256" -Encoding utf8
+          echo "ARCHIVE=$ARCHIVE" >> $env:GITHUB_ENV
 
       - name: Upload release artifacts
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ github.ref_name || inputs.tag }}
           files: |
             ${{ env.ARCHIVE }}
             ${{ env.ARCHIVE }}.sha256

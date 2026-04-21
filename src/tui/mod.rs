@@ -76,7 +76,7 @@ async fn refresh_data(app: &mut App) {
         app.registry = reg;
     }
 
-    // Fetch llmfit recommendations (non-blocking — skip on error)
+    // Fetch llmfit recommendations — optional, skip if not installed
     if crate::hardware::check(&app.config.llmfit_path) {
         if let Ok(recs) = crate::hardware::recommendations(5, &app.config.llmfit_path) {
             app.recommendations = recs;
@@ -88,10 +88,35 @@ async fn refresh_data(app: &mut App) {
         }
     }
 
-    // Fetch running models from Ollama
-    let ollama = crate::backends::ollama::OllamaBackend::new(&app.config.ollama.url);
-    if let Ok(running) = ollama.running_models().await {
-        app.running_models = running;
+    // Check DeepSage server status via state file + live health probe
+    app.server_running = false;
+    app.running_models.clear();
+
+    if let Some(state) = crate::server::read_serve_state() {
+        app.server_port = state.port;
+        app.server_active_model = state.active_model.clone();
+
+        // Confirm it is actually alive
+        let url = format!("http://127.0.0.1:{}/health", state.port);
+        if let Ok(client) = reqwest::Client::builder()
+            .timeout(std::time::Duration::from_millis(800))
+            .build()
+        {
+            if client.get(&url).send().await
+                .map(|r| r.status().is_success())
+                .unwrap_or(false)
+            {
+                app.server_running = true;
+                app.running_models = vec![crate::backends::RunningModel {
+                    name: state.active_model.clone(),
+                    backend: "llamacpp".into(),
+                    pid: Some(state.pid),
+                    vram_gb: 0.0,
+                    ram_gb: 0.0,
+                    endpoint: Some(format!("http://127.0.0.1:{}/v1", state.port)),
+                }];
+            }
+        }
     }
 
     app.last_refresh = std::time::Instant::now();

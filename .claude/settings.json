@@ -3,7 +3,23 @@
     "allow": [
       "Bash(gh repo *)",
       "Bash(cargo check *)",
-      "Bash(rustup update *)"
+      "Bash(rustup update *)",
+      "Bash(llmfit --version)",
+      "Read(//opt/homebrew/Cellar/llmfit/0.9.11/bin/**)",
+      "Bash(cargo install *)",
+      "Bash(deepsage system *)",
+      "Bash(llmfit system *)",
+      "Bash(llmfit recommend *)",
+      "Bash(llmfit fit *)",
+      "Bash(deepsage recommend *)",
+      "Bash(llmfit search *)",
+      "Bash(deepsage search *)",
+      "Bash(ollama list *)",
+      "Bash(ollama ps *)",
+      "Read(//Users/subhagatoadak/.local/share/deepsage/**)",
+      "Read(//Users/subhagatoadak/**)",
+      "Bash(cargo clippy *)",
+      "Bash(deepsage --version)"
     ]
   }
 }

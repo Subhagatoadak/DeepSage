@@ -20,6 +20,10 @@ pub fn models_dir() -> Result<PathBuf> {
     Ok(data_dir()?.join("models"))
 }
 
+pub fn server_state_path() -> Result<PathBuf> {
+    Ok(data_dir()?.join("server.json"))
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OllamaConfig {
     pub url: String,

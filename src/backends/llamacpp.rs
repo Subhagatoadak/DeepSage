@@ -1,10 +1,82 @@
+#![allow(dead_code)]
+
 use anyhow::{bail, Context, Result};
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::{Child, Command};
 use std::sync::{Arc, Mutex};
 
 use super::RunningModel;
+
+// ── Binary resolution ─────────────────────────────────────────────────────────
+
+const LLAMA_SERVER_CANDIDATES: &[&str] = &[
+    "/opt/homebrew/bin/llama-server",
+    "/usr/local/bin/llama-server",
+    "/home/linuxbrew/.linuxbrew/bin/llama-server",
+];
+
+/// Find llama-server: check configured name on PATH, then brew fallback locations.
+pub fn resolve_binary(configured: &str) -> Option<String> {
+    if which::which(configured).is_ok() {
+        return Some(configured.to_string());
+    }
+    for c in LLAMA_SERVER_CANDIDATES {
+        if Path::new(c).exists() {
+            return Some(c.to_string());
+        }
+    }
+    None
+}
+
+/// Spawn a llama-server process for the given model file.
+pub fn spawn_server(
+    binary: &str,
+    model_path: &Path,
+    host: &str,
+    port: u16,
+    n_gpu_layers: u32,
+    ctx_size: u32,
+) -> Result<Child> {
+    Command::new(binary)
+        .args([
+            "--model", &model_path.to_string_lossy(),
+            "--host", host,
+            "--port", &port.to_string(),
+            "--n-gpu-layers", &n_gpu_layers.to_string(),
+            "--ctx-size", &ctx_size.to_string(),
+        ])
+        .spawn()
+        .with_context(|| format!(
+            "failed to spawn '{binary}'\nInstall with: brew install llama.cpp"
+        ))
+}
+
+/// Poll llama-server's /health endpoint until it responds or we time out.
+pub async fn wait_for_ready(host: &str, port: u16, timeout_secs: u64) -> bool {
+    let url = format!("http://{host}:{port}/health");
+    let Ok(client) = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(2))
+        .build()
+    else {
+        return false;
+    };
+    let deadline =
+        std::time::Instant::now() + std::time::Duration::from_secs(timeout_secs);
+    while std::time::Instant::now() < deadline {
+        if client
+            .get(&url)
+            .send()
+            .await
+            .map(|r| r.status().is_success())
+            .unwrap_or(false)
+        {
+            return true;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+    }
+    false
+}
 
 type ProcessMap = Arc<Mutex<HashMap<String, Child>>>;
 
