@@ -301,10 +301,10 @@ The TUI dashboard refreshes every 3 seconds.
 ### Tabs
 
 | Tab | Key | Contents |
-|---|---|---|
+| --- | --- | --- |
 | **Dashboard** | `1` | Server status panel, CPU/RAM gauges, llmfit recommendations |
 | **Models** | `2` | Registered models — name, backend, quantization, VRAM allocation, active flag |
-| **System** | `3` | CPU, RAM, GPU/VRAM from llmfit hardware scan |
+| **System** | `3` | Live CPU/RAM/swap gauges + llmfit hardware profile |
 | **Logs** | `4` | Event log with timestamped entries |
 
 ### Dashboard — Server panel
@@ -325,6 +325,28 @@ When stopped:
  Server ○ Stopped
 ── stopped —  run: deepsage serve
 ```
+
+### System tab — real-time resource monitoring
+
+The System tab polls hardware metrics every 3 seconds using the `sysinfo` crate and displays them as live progress bars:
+
+| Metric | Source | What it tells you |
+| --- | --- | --- |
+| **CPU %** | `sysinfo::global_cpu_usage()` | Overall CPU load across all cores |
+| **RAM used / total** | `sysinfo::used_memory()` | Physical RAM consumed right now |
+| **Swap used / total** | `sysinfo::used_swap()` | Swap usage — high swap means the model is spilling out of RAM |
+
+Example System tab display:
+
+```
+ System Resources
+──────────────────────────────────────────────────────────
+CPU      ████████░░░░░░░░░░░░  38 %
+RAM      ██████████████░░░░░░  11.2 / 16.0 GB
+Swap     ░░░░░░░░░░░░░░░░░░░░   0.0 /  2.0 GB
+```
+
+**GPU / VRAM**: real-time VRAM utilization is not yet tracked in the System tab — `sysinfo` does not expose GPU memory. The VRAM figures shown in `deepsage list` and the title bar come from llmfit's static hardware profile (your GPU's total capacity), not live utilization. To see live GPU load on Apple Silicon use `sudo powermetrics --samplers gpu_power` in a separate terminal; on NVIDIA use `nvidia-smi`.
 
 ### Keyboard shortcuts
 
@@ -553,12 +575,36 @@ deepsage delete "ModelName"
 
 ### Memory allocation
 
-By default allocation is `auto`. Override for specific models:
+Every registered model has two allocation fields stored in `registry.json`:
+
+| Field | Default | Meaning |
+| --- | --- | --- |
+| `vram_alloc_gb` | `0.0` | How many GB to target on the GPU |
+| `ram_alloc_gb` | `0.0` | How many GB to target in system RAM |
+| `alloc_auto` | `true` | Let llmfit / llama-server decide automatically |
+
+**Auto mode** (default): DeepSage passes `--n-gpu-layers 999` to `llama-server` when VRAM is available (meaning "offload as many layers as possible"), or `0` when it isn't. llama-server handles the rest.
+
+**Manual mode**: set explicit values and DeepSage translates them to `--n-gpu-layers` when spawning `llama-server`. Use this when you are running multiple models and want to reserve a fixed slice of VRAM for each.
 
 ```bash
+# Pin Qwen 7B to 4.5 GB VRAM + 1 GB RAM
 deepsage alloc "Qwen2.5-7B-Instruct" --vram 4.5 --ram 1.0
-deepsage alloc "Qwen2.5-7B-Instruct" --auto     # back to auto
+
+# Go back to automatic
+deepsage alloc "Qwen2.5-7B-Instruct" --auto
 ```
+
+`deepsage list` shows the current allocation for every model:
+
+```
+Name                     Backend    VRAM       Active
+────────────────────────────────────────────────────────────────────────
+Llama-3.2-1B-Instruct    llamacpp   auto       ● active
+Qwen2.5-7B-Instruct      llamacpp   4.5G       ○
+```
+
+> **Why this matters**: if you have 8 GB of shared VRAM and two large models registered, setting explicit allocations prevents one model from evicting the other when you switch between them.
 
 ### One-shot inference from the terminal
 
