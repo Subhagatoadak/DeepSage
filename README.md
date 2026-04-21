@@ -1,7 +1,8 @@
+
 # DeepSage
 
 Configure, run, manage, and monitor open source LLM models — with hardware-aware recommendations powered by [llmfit](https://github.com/AlexsJones/llmfit).
-
+<img width="1842" height="1018" alt="Screenshot 2026-04-21 at 1 02 08 PM" src="https://github.com/user-attachments/assets/c4a54e74-42b1-489f-836c-f44031d55d71" />
 ## Features
 
 - **Hardware-fit recommendations** — integrates llmfit to score models against your CPU, RAM, and VRAM
