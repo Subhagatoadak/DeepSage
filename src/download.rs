@@ -133,7 +133,7 @@ pub fn parse_source(source: &str) -> Result<DownloadSource> {
             _ => bail!("invalid hf source: {source}"),
         }
     } else if source.starts_with("https://") || source.starts_with("http://") {
-        let filename = source.split('/').last().unwrap_or("model.gguf").to_string();
+        let filename = source.split('/').next_back().unwrap_or("model.gguf").to_string();
         Ok(DownloadSource::DirectUrl { url: source.to_string(), filename })
     } else {
         bail!("unknown source format: {source}  (use hf:owner/repo/file.gguf or https://...)")

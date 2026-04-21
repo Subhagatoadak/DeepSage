@@ -36,8 +36,8 @@ pub async fn recommend(n: usize, cfg: &Config) -> Result<()> {
     let recs = hardware::recommendations(n, &cfg.llmfit_path)?;
     println!("{BOLD}{CYAN} llmfit Recommendations{RESET}");
     print_hr();
-    println!("{BOLD}{:<3} {:<40} {:<9} {:<6} {:<7} {:<12} {:<8} {}{RESET}",
-        "#", "Model", "Fit", "Score", "VRAM", "Quant", "TPS", "Runtime");
+    println!("{BOLD}{:<3} {:<40} {:<9} {:<6} {:<7} {:<12} {:<8} Runtime{RESET}",
+        "#", "Model", "Fit", "Score", "VRAM", "Quant", "TPS");
     print_hr();
     for (i, r) in recs.iter().enumerate() {
         let fc = fit_color_ansi(&r.fit_level);
@@ -275,7 +275,7 @@ pub async fn pull_model(model: &str, cfg: &Config) -> Result<()> {
         if status != last_status {
             last_status = status.clone();
         }
-        let pct = total.map(|t| if t > 0 { completed * 100 / t } else { 0 });
+        let pct = total.map(|t| (completed * 100).checked_div(t).unwrap_or(0));
         match pct {
             Some(p) => print!("\r  {status:<40} {p:>3}%  "),
             None    => print!("\r  {status:<40}       "),
@@ -324,7 +324,7 @@ pub async fn download(source: &str, file_override: Option<&str>, cfg: &Config) -
                 hf_cfg.token.as_deref(),
                 &hf_cfg.endpoint,
                 |downloaded, total| {
-                    let pct = total.map(|t| if t > 0 { downloaded * 100 / t } else { 0 });
+                    let pct = total.map(|t| (downloaded * 100).checked_div(t).unwrap_or(0));
                     let mb = downloaded as f64 / 1e6;
                     match pct {
                         Some(p) => print!("\r  {mb:.1} MB  {p:>3}%  "),
@@ -339,7 +339,7 @@ pub async fn download(source: &str, file_override: Option<&str>, cfg: &Config) -
         DownloadSource::DirectUrl { url, filename } => {
             println!("Downloading {BOLD}{filename}{RESET} from {DIM}{url}{RESET}…");
             let path = download::download_url(&url, &dest_dir, &filename, |downloaded, total| {
-                let pct = total.map(|t| if t > 0 { downloaded * 100 / t } else { 0 });
+                let pct = total.map(|t| (downloaded * 100).checked_div(t).unwrap_or(0));
                 let mb = downloaded as f64 / 1e6;
                 match pct {
                     Some(p) => print!("\r  {mb:.1} MB  {p:>3}%  "),
@@ -481,7 +481,7 @@ pub async fn pick(n: usize, index: Option<usize>, cfg: &Config) -> Result<()> {
         hf_cfg.token.as_deref(),
         &hf_cfg.endpoint,
         |downloaded, total| {
-            let pct = total.map(|t| if t > 0 { downloaded * 100 / t } else { 0 });
+            let pct = total.map(|t| (downloaded * 100).checked_div(t).unwrap_or(0));
             let mb = downloaded as f64 / 1e6;
             match pct {
                 Some(p) => print!("\r  {mb:.1} MB  {p:>3}%  "),

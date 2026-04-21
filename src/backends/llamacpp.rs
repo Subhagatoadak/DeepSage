@@ -117,7 +117,7 @@ impl LlamaCppBackend {
     }
 
     /// Spawn llama-server for a model. Returns the port it is listening on.
-    pub fn run(&self, model_path: &PathBuf, vram_gb: f32, ctx_size: u32) -> Result<u16> {
+    pub fn run(&self, model_path: &Path, vram_gb: f32, ctx_size: u32) -> Result<u16> {
         let key = model_path.to_string_lossy().to_string();
         let mut processes = self.processes.lock().unwrap();
 
@@ -143,7 +143,7 @@ impl LlamaCppBackend {
         Ok(port)
     }
 
-    pub fn stop(&self, model_path: &PathBuf) -> Result<()> {
+    pub fn stop(&self, model_path: &Path) -> Result<()> {
         let key = model_path.to_string_lossy().to_string();
         let mut processes = self.processes.lock().unwrap();
         if let Some(mut child) = processes.remove(&key) {

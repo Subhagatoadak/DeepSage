@@ -385,7 +385,7 @@ fn stream_infer(
                         for line in String::from_utf8_lossy(&chunk).lines() {
                             if let Some(data) = line.strip_prefix("data: ") {
                                 if data == "[DONE]" { break; }
-                                yield Ok(Event::default().data(data.to_string()));
+                                yield Ok(Event::default().data(data));
                             }
                         }
                     }
