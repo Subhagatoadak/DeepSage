@@ -11,9 +11,9 @@ use crate::registry::{ModelEntry, Registry};
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Tab {
     Dashboard = 0,
-    Models    = 1,
-    System    = 2,
-    Logs      = 3,
+    Models = 1,
+    System = 2,
+    Logs = 3,
 }
 
 impl Tab {
@@ -24,20 +24,22 @@ impl Tab {
     pub fn next(self) -> Self {
         match self {
             Tab::Dashboard => Tab::Models,
-            Tab::Models    => Tab::System,
-            Tab::System    => Tab::Logs,
-            Tab::Logs      => Tab::Dashboard,
+            Tab::Models => Tab::System,
+            Tab::System => Tab::Logs,
+            Tab::Logs => Tab::Dashboard,
         }
     }
     pub fn prev(self) -> Self {
         match self {
             Tab::Dashboard => Tab::Logs,
-            Tab::Models    => Tab::Dashboard,
-            Tab::System    => Tab::Models,
-            Tab::Logs      => Tab::System,
+            Tab::Models => Tab::Dashboard,
+            Tab::System => Tab::Models,
+            Tab::Logs => Tab::System,
         }
     }
-    pub fn index(self) -> usize { self as usize }
+    pub fn index(self) -> usize {
+        self as usize
+    }
 }
 
 pub struct App {
@@ -130,7 +132,7 @@ impl App {
             KeyCode::Char('3') => self.active_tab = Tab::System,
             KeyCode::Char('4') => self.active_tab = Tab::Logs,
             KeyCode::Down | KeyCode::Char('j') => self.next_row(),
-            KeyCode::Up   | KeyCode::Char('k') => self.prev_row(),
+            KeyCode::Up | KeyCode::Char('k') => self.prev_row(),
             KeyCode::Char('/') => {
                 self.search_mode = true;
                 self.search_query.clear();
@@ -139,8 +141,8 @@ impl App {
             KeyCode::Char('s') => self.action_stop_selected(),
             KeyCode::Char('p') => self.action_pull_selected(),
             KeyCode::Char('d') => self.action_delete_selected(),
-            KeyCode::PageDown  => self.logs_scroll = self.logs_scroll.saturating_add(10),
-            KeyCode::PageUp    => self.logs_scroll = self.logs_scroll.saturating_sub(10),
+            KeyCode::PageDown => self.logs_scroll = self.logs_scroll.saturating_add(10),
+            KeyCode::PageUp => self.logs_scroll = self.logs_scroll.saturating_sub(10),
             _ => {}
         }
     }
@@ -148,7 +150,9 @@ impl App {
     fn handle_search_key(&mut self, key: KeyEvent) {
         match key.code {
             KeyCode::Esc | KeyCode::Enter => self.search_mode = false,
-            KeyCode::Backspace => { self.search_query.pop(); }
+            KeyCode::Backspace => {
+                self.search_query.pop();
+            }
             KeyCode::Char(c) if !key.modifiers.contains(KeyModifiers::CONTROL) => {
                 self.search_query.push(c);
             }
@@ -162,8 +166,14 @@ impl App {
             Tab::Dashboard => self.recommendations.len(),
             _ => 0,
         };
-        if max == 0 { return; }
-        let i = self.models_table.selected().map(|i| (i + 1) % max).unwrap_or(0);
+        if max == 0 {
+            return;
+        }
+        let i = self
+            .models_table
+            .selected()
+            .map(|i| (i + 1) % max)
+            .unwrap_or(0);
         self.models_table.select(Some(i));
     }
 
@@ -173,8 +183,12 @@ impl App {
             Tab::Dashboard => self.recommendations.len(),
             _ => 0,
         };
-        if max == 0 { return; }
-        let i = self.models_table.selected()
+        if max == 0 {
+            return;
+        }
+        let i = self
+            .models_table
+            .selected()
             .map(|i| if i == 0 { max - 1 } else { i - 1 })
             .unwrap_or(0);
         self.models_table.select(Some(i));
@@ -182,9 +196,15 @@ impl App {
 
     pub fn filtered_models(&self) -> Vec<&ModelEntry> {
         let q = self.search_query.to_lowercase();
-        self.registry.models.iter().filter(|m| {
-            q.is_empty() || m.name.to_lowercase().contains(&q) || m.source.to_string().contains(&q)
-        }).collect()
+        self.registry
+            .models
+            .iter()
+            .filter(|m| {
+                q.is_empty()
+                    || m.name.to_lowercase().contains(&q)
+                    || m.source.to_string().contains(&q)
+            })
+            .collect()
     }
 
     // ── Actions (triggered by key; actual async work done in commands) ────────

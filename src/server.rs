@@ -10,11 +10,14 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use anyhow::Result;
 use axum::{
-    Json, Router,
     extract::State,
     http::{HeaderMap, StatusCode},
-    response::{IntoResponse, Response, sse::{Event, KeepAlive, Sse}},
+    response::{
+        sse::{Event, KeepAlive, Sse},
+        IntoResponse, Response,
+    },
     routing::{get, post},
+    Json, Router,
 };
 use futures_util::{Stream, StreamExt};
 use serde::{Deserialize, Serialize};
@@ -83,7 +86,9 @@ pub struct ChatRequest {
     pub max_tokens: Option<u32>,
 }
 
-fn default_temperature() -> f32 { 0.7 }
+fn default_temperature() -> f32 {
+    0.7
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChatMessage {
@@ -154,7 +159,10 @@ struct ModelList {
 }
 
 fn now() -> u64 {
-    SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs()
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs()
 }
 
 fn gen_id() -> String {
@@ -170,10 +178,10 @@ pub fn router(state: ServerState) -> Router {
         .allow_headers(Any);
 
     Router::new()
-        .route("/health",               get(health))
-        .route("/v1/models",            get(list_models))
-        .route("/v1/chat/completions",  post(chat_completions))
-        .route("/v1/completions",       post(legacy_completions))
+        .route("/health", get(health))
+        .route("/v1/models", get(list_models))
+        .route("/v1/chat/completions", post(chat_completions))
+        .route("/v1/completions", post(legacy_completions))
         .with_state(Arc::new(state))
         .layer(cors)
 }
@@ -181,18 +189,32 @@ pub fn router(state: ServerState) -> Router {
 // ── Handlers ──────────────────────────────────────────────────────────────────
 
 async fn health(State(s): State<Arc<ServerState>>) -> impl IntoResponse {
-    let active = s.registry.models.iter().find(|m| m.active).map(|m| m.name.as_str()).unwrap_or("none");
+    let active = s
+        .registry
+        .models
+        .iter()
+        .find(|m| m.active)
+        .map(|m| m.name.as_str())
+        .unwrap_or("none");
     Json(serde_json::json!({ "status": "ok", "active_model": active }))
 }
 
 async fn list_models(State(s): State<Arc<ServerState>>) -> impl IntoResponse {
-    let data: Vec<ModelObject> = s.registry.models.iter().map(|m| ModelObject {
-        id: m.name.clone(),
-        object: "model",
-        created: 0,
-        owned_by: m.backend.clone(),
-    }).collect();
-    Json(ModelList { object: "list", data })
+    let data: Vec<ModelObject> = s
+        .registry
+        .models
+        .iter()
+        .map(|m| ModelObject {
+            id: m.name.clone(),
+            object: "model",
+            created: 0,
+            owned_by: m.backend.clone(),
+        })
+        .collect();
+    Json(ModelList {
+        object: "list",
+        data,
+    })
 }
 
 async fn legacy_completions(
@@ -224,7 +246,13 @@ async fn chat_completions(
     // Drop the borrow before moving `s` into the response helpers
     let model = match s.registry.get(&model_name_resolved) {
         Some(m) => m.clone(),
-        None => return (StatusCode::INTERNAL_SERVER_ERROR, "model vanished".to_string()).into_response(),
+        None => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "model vanished".to_string(),
+            )
+                .into_response()
+        }
     };
 
     if req.stream {
@@ -238,12 +266,13 @@ async fn chat_completions(
 
 fn resolve_model<'a>(s: &'a ServerState, name: Option<&str>) -> Result<&'a ModelEntry> {
     match name {
-        Some(n) => s.registry.get(n)
+        Some(n) => s
+            .registry
+            .get(n)
             .ok_or_else(|| anyhow::anyhow!("model '{n}' not found in registry")),
-        None => s.registry.models.iter().find(|m| m.active)
-            .ok_or_else(|| anyhow::anyhow!(
-                "no active model — set one with: deepsage switch <model>"
-            )),
+        None => s.registry.models.iter().find(|m| m.active).ok_or_else(|| {
+            anyhow::anyhow!("no active model — set one with: deepsage switch <model>")
+        }),
     }
 }
 
@@ -263,17 +292,25 @@ async fn blocking_response_owned(
                 model: model.name.clone(),
                 choices: vec![ChatChoice {
                     index: 0,
-                    message: ChatMessage { role: "assistant".into(), content },
+                    message: ChatMessage {
+                        role: "assistant".into(),
+                        content,
+                    },
                     finish_reason: "stop",
                 }],
-                usage: Usage { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
+                usage: Usage {
+                    prompt_tokens: 0,
+                    completion_tokens: 0,
+                    total_tokens: 0,
+                },
             };
             Json(resp).into_response()
         }
         Err(e) => (
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(serde_json::json!({"error": {"message": e.to_string(), "type": "server_error"}})),
-        ).into_response(),
+        )
+            .into_response(),
     }
 }
 
@@ -289,7 +326,9 @@ async fn stream_response_owned(
     let cfg = s.config.clone();
 
     let stream = stream_infer(cfg, model, req.messages, id, model_name);
-    Sse::new(stream).keep_alive(KeepAlive::default()).into_response()
+    Sse::new(stream)
+        .keep_alive(KeepAlive::default())
+        .into_response()
 }
 
 fn stream_infer(
@@ -421,26 +460,36 @@ async fn do_infer(
                 "messages": messages,
                 "stream": false,
             });
-            let resp: serde_json::Value = client.post(&url).json(&body).send().await?.json().await?;
+            let resp: serde_json::Value =
+                client.post(&url).json(&body).send().await?.json().await?;
             if let Some(err) = resp["error"].as_str() {
                 anyhow::bail!("Ollama error: {}", err);
             }
-            let content = resp["message"]["content"].as_str().unwrap_or("").to_string();
+            let content = resp["message"]["content"]
+                .as_str()
+                .unwrap_or("")
+                .to_string();
             if content.is_empty() {
                 anyhow::bail!("Ollama returned empty content. Raw response: {}", resp);
             }
             Ok(content)
         }
         "llamacpp" => {
-            let url = format!("http://{}:{}/v1/chat/completions",
-                cfg.llamacpp.host, cfg.llamacpp.port);
+            let url = format!(
+                "http://{}:{}/v1/chat/completions",
+                cfg.llamacpp.host, cfg.llamacpp.port
+            );
             let body = serde_json::json!({
                 "model": model.name,
                 "messages": messages,
                 "stream": false,
             });
-            let resp: serde_json::Value = client.post(&url).json(&body).send().await?.json().await?;
-            Ok(resp["choices"][0]["message"]["content"].as_str().unwrap_or("").to_string())
+            let resp: serde_json::Value =
+                client.post(&url).json(&body).send().await?.json().await?;
+            Ok(resp["choices"][0]["message"]["content"]
+                .as_str()
+                .unwrap_or("")
+                .to_string())
         }
         other => anyhow::bail!("unknown backend '{other}'"),
     }
@@ -460,68 +509,76 @@ impl Drop for KillOnDrop {
 
 pub async fn serve(host: &str, port: u16, cfg: Config) -> Result<()> {
     let registry = crate::registry::load().unwrap_or_default();
-    let active = registry.models.iter().find(|m| m.active)
+    let active = registry
+        .models
+        .iter()
+        .find(|m| m.active)
         .map(|m| m.name.clone())
         .unwrap_or_else(|| "none".into());
 
     // Auto-spawn llama-server when the active model uses the llamacpp backend
-    let _llama_guard: Option<KillOnDrop> =
-        if let Some(model) = registry.models.iter().find(|m| m.active) {
-            if model.backend == "llamacpp" {
-                let local_path = model.local_path.as_ref().ok_or_else(|| {
-                    anyhow::anyhow!(
-                        "model '{}' has no local GGUF file.\n\
+    let _llama_guard: Option<KillOnDrop> = if let Some(model) =
+        registry.models.iter().find(|m| m.active)
+    {
+        if model.backend == "llamacpp" {
+            let local_path = model.local_path.as_ref().ok_or_else(|| {
+                anyhow::anyhow!(
+                    "model '{}' has no local GGUF file.\n\
                          Run `deepsage pick` to download and register a model.",
-                        model.name
+                    model.name
+                )
+            })?;
+
+            let binary = crate::backends::llamacpp::resolve_binary(&cfg.llamacpp.server_binary)
+                .ok_or_else(|| {
+                    anyhow::anyhow!(
+                        "llama-server not found.\n\
+                             Install with:  brew install llama.cpp"
                     )
                 })?;
 
-                let binary =
-                    crate::backends::llamacpp::resolve_binary(&cfg.llamacpp.server_binary)
-                        .ok_or_else(|| anyhow::anyhow!(
-                            "llama-server not found.\n\
-                             Install with:  brew install llama.cpp"
-                        ))?;
+            let n_gpu_layers: u32 = if model.vram_alloc_gb > 0.0 { 999 } else { 0 };
+            let internal_port = cfg.llamacpp.port;
 
-                let n_gpu_layers: u32 = if model.vram_alloc_gb > 0.0 { 999 } else { 0 };
-                let internal_port = cfg.llamacpp.port;
+            println!(
+                "\x1b[2m  Spawning llama-server for '{}' on internal port {}…\x1b[0m",
+                model.name, internal_port
+            );
 
-                println!("\x1b[2m  Spawning llama-server for '{}' on internal port {}…\x1b[0m",
-                    model.name, internal_port);
+            let child = crate::backends::llamacpp::spawn_server(
+                &binary,
+                std::path::Path::new(local_path),
+                "127.0.0.1",
+                internal_port,
+                n_gpu_layers,
+                4096,
+            )?;
+            let guard = KillOnDrop(child);
 
-                let child = crate::backends::llamacpp::spawn_server(
-                    &binary,
-                    std::path::Path::new(local_path),
-                    "127.0.0.1",
-                    internal_port,
-                    n_gpu_layers,
-                    4096,
-                )?;
-                let guard = KillOnDrop(child);
+            print!("\x1b[2m  Waiting for llama-server to be ready");
+            use std::io::Write;
+            std::io::stdout().flush()?;
 
-                print!("\x1b[2m  Waiting for llama-server to be ready");
-                use std::io::Write;
-                std::io::stdout().flush()?;
-
-                if !crate::backends::llamacpp::wait_for_ready(
-                    "127.0.0.1", internal_port, 120,
-                ).await {
-                    anyhow::bail!(
-                        "llama-server did not become ready within 120 seconds.\n\
+            if !crate::backends::llamacpp::wait_for_ready("127.0.0.1", internal_port, 120).await {
+                anyhow::bail!(
+                    "llama-server did not become ready within 120 seconds.\n\
                          Check that the model file is valid and llama-server is working."
-                    );
-                }
-                println!(" ✓\x1b[0m");
-
-                Some(guard)
-            } else {
-                None
+                );
             }
+            println!(" ✓\x1b[0m");
+
+            Some(guard)
         } else {
             None
-        };
+        }
+    } else {
+        None
+    };
 
-    let state = ServerState { config: cfg, registry };
+    let state = ServerState {
+        config: cfg,
+        registry,
+    };
     let app = router(state);
     let addr = format!("{host}:{port}");
     let listener = tokio::net::TcpListener::bind(&addr).await?;
@@ -560,7 +617,9 @@ pub async fn serve(host: &str, port: u16, cfg: Config) -> Result<()> {
     println!("{}", "─".repeat(60));
 
     axum::serve(listener, app)
-        .with_graceful_shutdown(async { tokio::signal::ctrl_c().await.ok(); })
+        .with_graceful_shutdown(async {
+            tokio::signal::ctrl_c().await.ok();
+        })
         .await?;
 
     // Clean up: delete state file and kill llama-server

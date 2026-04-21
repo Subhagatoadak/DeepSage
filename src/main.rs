@@ -144,9 +144,7 @@ enum Cmd {
     },
 
     /// Search the llmfit model database
-    Search {
-        query: String,
-    },
+    Search { query: String },
 
     /// Start the OpenAI-compatible inference server
     Serve {
@@ -190,30 +188,50 @@ async fn main() -> Result<()> {
     let cfg = config::load()?;
 
     match cli.command {
-        None | Some(Cmd::Tui)                   => tui::run(cfg).await,
-        Some(Cmd::Recommend { n })               => commands::recommend(n, &cfg).await,
-        Some(Cmd::Pick { n, index })             => commands::pick(n, index, &cfg).await,
-        Some(Cmd::List { running })              => commands::list(running, &cfg).await,
-        Some(Cmd::Register { name, source, backend, quantization }) => {
-            commands::register(&name, &source, backend.as_deref(), quantization.as_deref(), &cfg)
+        None | Some(Cmd::Tui) => tui::run(cfg).await,
+        Some(Cmd::Recommend { n }) => commands::recommend(n, &cfg).await,
+        Some(Cmd::Pick { n, index }) => commands::pick(n, index, &cfg).await,
+        Some(Cmd::List { running }) => commands::list(running, &cfg).await,
+        Some(Cmd::Register {
+            name,
+            source,
+            backend,
+            quantization,
+        }) => commands::register(
+            &name,
+            &source,
+            backend.as_deref(),
+            quantization.as_deref(),
+            &cfg,
+        ),
+        Some(Cmd::Switch { model }) => commands::switch(&model),
+        Some(Cmd::Alloc {
+            model,
+            vram,
+            ram,
+            auto,
+        }) => commands::set_alloc(&model, vram, ram, auto),
+        Some(Cmd::Run { model, backend }) => {
+            commands::run_model(&model, backend.as_deref(), &cfg).await
         }
-        Some(Cmd::Switch { model })              => commands::switch(&model),
-        Some(Cmd::Alloc { model, vram, ram, auto }) => {
-            commands::set_alloc(&model, vram, ram, auto)
+        Some(Cmd::Stop { model }) => commands::stop_model(&model, &cfg).await,
+        Some(Cmd::Pull { model }) => commands::pull_model(&model, &cfg).await,
+        Some(Cmd::Download { source, file }) => {
+            commands::download(&source, file.as_deref(), &cfg).await
         }
-        Some(Cmd::Run { model, backend })        => commands::run_model(&model, backend.as_deref(), &cfg).await,
-        Some(Cmd::Stop { model })                => commands::stop_model(&model, &cfg).await,
-        Some(Cmd::Pull { model })                => commands::pull_model(&model, &cfg).await,
-        Some(Cmd::Download { source, file })     => commands::download(&source, file.as_deref(), &cfg).await,
-        Some(Cmd::Serve { host, port })          => server::serve(&host, port, cfg).await,
-        Some(Cmd::Endpoint { model })            => commands::endpoint(model.as_deref(), &cfg).await,
-        Some(Cmd::Infer { prompt, model })       => commands::infer(&prompt, model.as_deref(), &cfg).await,
-        Some(Cmd::Search { query })              => commands::search(&query, &cfg).await,
-        Some(Cmd::System)                        => commands::system_info(&cfg).await,
-        Some(Cmd::Monitor)                       => commands::monitor(&cfg).await,
-        Some(Cmd::Delete { model })              => commands::delete(&model),
-        Some(Cmd::Config { set_backend, set_ollama_url, set_hf_token }) => {
-            commands::configure(set_backend, set_ollama_url, None, set_hf_token, cfg)
+        Some(Cmd::Serve { host, port }) => server::serve(&host, port, cfg).await,
+        Some(Cmd::Endpoint { model }) => commands::endpoint(model.as_deref(), &cfg).await,
+        Some(Cmd::Infer { prompt, model }) => {
+            commands::infer(&prompt, model.as_deref(), &cfg).await
         }
+        Some(Cmd::Search { query }) => commands::search(&query, &cfg).await,
+        Some(Cmd::System) => commands::system_info(&cfg).await,
+        Some(Cmd::Monitor) => commands::monitor(&cfg).await,
+        Some(Cmd::Delete { model }) => commands::delete(&model),
+        Some(Cmd::Config {
+            set_backend,
+            set_ollama_url,
+            set_hf_token,
+        }) => commands::configure(set_backend, set_ollama_url, None, set_hf_token, cfg),
     }
 }

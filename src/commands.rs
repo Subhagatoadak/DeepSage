@@ -1,7 +1,7 @@
 use anyhow::{bail, Result};
 
-use crate::backends::ollama::OllamaBackend;
 use crate::backends::llamacpp::LlamaCppBackend;
+use crate::backends::ollama::OllamaBackend;
 use crate::config::{self, Config};
 use crate::download::{self, DownloadSource};
 use crate::hardware;
@@ -10,21 +10,23 @@ use crate::registry::{self, ModelEntry, ModelSource};
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
-fn print_hr() { println!("{}", "─".repeat(72)); }
+fn print_hr() {
+    println!("{}", "─".repeat(72));
+}
 
 fn fit_color_ansi(fit: &str) -> &'static str {
     match fit.to_lowercase().as_str() {
         s if s.contains("perfect") => "\x1b[32m",
-        s if s.contains("good")    => "\x1b[92m",
-        s if s.contains("ok")      => "\x1b[33m",
-        _                           => "\x1b[31m",
+        s if s.contains("good") => "\x1b[92m",
+        s if s.contains("ok") => "\x1b[33m",
+        _ => "\x1b[31m",
     }
 }
 
 const RESET: &str = "\x1b[0m";
-const BOLD:  &str = "\x1b[1m";
-const DIM:   &str = "\x1b[2m";
-const CYAN:  &str = "\x1b[36m";
+const BOLD: &str = "\x1b[1m";
+const DIM: &str = "\x1b[2m";
+const CYAN: &str = "\x1b[36m";
 
 // ── recommend ────────────────────────────────────────────────────────────────
 
@@ -36,16 +38,26 @@ pub async fn recommend(n: usize, cfg: &Config) -> Result<()> {
     let recs = hardware::recommendations(n, &cfg.llmfit_path)?;
     println!("{BOLD}{CYAN} llmfit Recommendations{RESET}");
     print_hr();
-    println!("{BOLD}{:<3} {:<40} {:<9} {:<6} {:<7} {:<12} {:<8} Runtime{RESET}",
-        "#", "Model", "Fit", "Score", "VRAM", "Quant", "TPS");
+    println!(
+        "{BOLD}{:<3} {:<40} {:<9} {:<6} {:<7} {:<12} {:<8} Runtime{RESET}",
+        "#", "Model", "Fit", "Score", "VRAM", "Quant", "TPS"
+    );
     print_hr();
     for (i, r) in recs.iter().enumerate() {
         let fc = fit_color_ansi(&r.fit_level);
         // Trim long HuggingFace-style names: keep last two path segments
         let short_name = r.name.splitn(2, '/').last().unwrap_or(&r.name);
-        println!("{:<3} {BOLD}{:<40}{RESET} {fc}{:<9}{RESET} {:<6.1} {:<7.1} {:<12} {:<8.1} {}",
-            i + 1, short_name, r.fit_level, r.score,
-            r.vram_required_gb, r.quantization, r.estimated_tps, r.backend);
+        println!(
+            "{:<3} {BOLD}{:<40}{RESET} {fc}{:<9}{RESET} {:<6.1} {:<7.1} {:<12} {:<8.1} {}",
+            i + 1,
+            short_name,
+            r.fit_level,
+            r.score,
+            r.vram_required_gb,
+            r.quantization,
+            r.estimated_tps,
+            r.backend
+        );
     }
     Ok(())
 }
@@ -62,8 +74,16 @@ pub async fn system_info(cfg: &Config) -> Result<()> {
     print_hr();
     println!("  CPU       : {} ({} cores)", info.cpu_name, info.cpu_cores);
     println!("  RAM       : {:.1} GB", info.ram_gb);
-    let gpu = if info.gpu_name.is_empty() { "none".into() } else { info.gpu_name.clone() };
-    let mem_note = if info.unified_memory { " (unified)" } else { "" };
+    let gpu = if info.gpu_name.is_empty() {
+        "none".into()
+    } else {
+        info.gpu_name.clone()
+    };
+    let mem_note = if info.unified_memory {
+        " (unified)"
+    } else {
+        ""
+    };
     println!("  GPU       : {}{}", gpu, mem_note);
     println!("  VRAM      : {:.1} GB{}", info.vram_gb, mem_note);
     Ok(())
@@ -79,12 +99,26 @@ pub async fn list(_running_only: bool, _cfg: &Config) -> Result<()> {
     if reg.models.is_empty() {
         println!("{DIM}  No models yet.  Run: deepsage pick{RESET}");
     } else {
-        println!("{BOLD}{:<22} {:<10} {:<10} {:<6}{RESET}", "Name", "Backend", "VRAM", "Active");
+        println!(
+            "{BOLD}{:<22} {:<10} {:<10} {:<6}{RESET}",
+            "Name", "Backend", "VRAM", "Active"
+        );
         print_hr();
         for m in &reg.models {
-            let active = if m.active { "\x1b[32m●\x1b[0m active" } else { "○" };
-            let alloc = if m.alloc_auto { "auto".into() } else { format!("{:.1}G", m.vram_alloc_gb) };
-            println!("{BOLD}{:<22}{RESET} {:<10} {:<10} {}", m.name, m.backend, alloc, active);
+            let active = if m.active {
+                "\x1b[32m●\x1b[0m active"
+            } else {
+                "○"
+            };
+            let alloc = if m.alloc_auto {
+                "auto".into()
+            } else {
+                format!("{:.1}G", m.vram_alloc_gb)
+            };
+            println!(
+                "{BOLD}{:<22}{RESET} {:<10} {:<10} {}",
+                m.name, m.backend, alloc, active
+            );
         }
     }
     println!();
@@ -99,16 +133,31 @@ pub async fn list(_running_only: bool, _cfg: &Config) -> Result<()> {
                 .timeout(std::time::Duration::from_secs(1))
                 .build()
                 .ok()
-                .map(|c| async move { c.get(&url).send().await.map(|r| r.status().is_success()).unwrap_or(false) });
+                .map(|c| async move {
+                    c.get(&url)
+                        .send()
+                        .await
+                        .map(|r| r.status().is_success())
+                        .unwrap_or(false)
+                });
             let alive = if let Some(f) = alive { f.await } else { false };
 
             if alive {
-                println!("  \x1b[32m●\x1b[0m {BOLD}Running{RESET}  model: {BOLD}{}{RESET}", state.active_model);
-                println!("  {DIM}Endpoint : http://127.0.0.1:{}/v1/chat/completions{RESET}", state.port);
+                println!(
+                    "  \x1b[32m●\x1b[0m {BOLD}Running{RESET}  model: {BOLD}{}{RESET}",
+                    state.active_model
+                );
+                println!(
+                    "  {DIM}Endpoint : http://127.0.0.1:{}/v1/chat/completions{RESET}",
+                    state.port
+                );
                 println!();
                 println!("{DIM}  Python:{RESET}");
                 println!("    from openai import OpenAI");
-                println!("    client = OpenAI(base_url=\"http://127.0.0.1:{}/v1\", api_key=\"none\")", state.port);
+                println!(
+                    "    client = OpenAI(base_url=\"http://127.0.0.1:{}/v1\", api_key=\"none\")",
+                    state.port
+                );
                 println!("    r = client.chat.completions.create(model=\"{}\", messages=[{{\"role\":\"user\",\"content\":\"Hello\"}}])", state.active_model);
                 println!("    print(r.choices[0].message.content)");
             } else {
@@ -139,7 +188,9 @@ pub fn register(
     let backend = backend.unwrap_or(&derived_backend).to_string();
 
     let mut entry = ModelEntry::new(name, model_source, &backend);
-    if let Some(q) = quantization { entry.quantization = q.to_string(); }
+    if let Some(q) = quantization {
+        entry.quantization = q.to_string();
+    }
 
     reg.register(entry);
     registry::save(&reg)?;
@@ -149,7 +200,12 @@ pub fn register(
 
 fn parse_source_for_register(source: &str) -> Result<(ModelSource, String)> {
     if let Some(tag) = source.strip_prefix("ollama:") {
-        return Ok((ModelSource::Ollama { tag: tag.to_string() }, "ollama".into()));
+        return Ok((
+            ModelSource::Ollama {
+                tag: tag.to_string(),
+            },
+            "ollama".into(),
+        ));
     }
     if let Some(rest) = source.strip_prefix("hf:") {
         let parts: Vec<&str> = rest.splitn(3, '/').collect();
@@ -165,10 +221,20 @@ fn parse_source_for_register(source: &str) -> Result<(ModelSource, String)> {
         bail!("hf source must be hf:owner/repo/file.gguf");
     }
     if source.starts_with('/') || source.starts_with("./") || source.starts_with("~/") {
-        return Ok((ModelSource::Local { path: source.to_string() }, "llamacpp".into()));
+        return Ok((
+            ModelSource::Local {
+                path: source.to_string(),
+            },
+            "llamacpp".into(),
+        ));
     }
     // Bare model name → assume Ollama tag
-    Ok((ModelSource::Ollama { tag: source.to_string() }, "ollama".into()))
+    Ok((
+        ModelSource::Ollama {
+            tag: source.to_string(),
+        },
+        "ollama".into(),
+    ))
 }
 
 // ── switch ───────────────────────────────────────────────────────────────────
@@ -193,7 +259,11 @@ pub fn set_alloc(
     auto: bool,
 ) -> Result<()> {
     let mut reg = registry::load().unwrap_or_default();
-    let (v, r) = if auto { (None, None) } else { (vram_gb, ram_gb) };
+    let (v, r) = if auto {
+        (None, None)
+    } else {
+        (vram_gb, ram_gb)
+    };
     if !reg.set_alloc(id_or_name, v, r) {
         bail!("model not found: {id_or_name}");
     }
@@ -201,8 +271,11 @@ pub fn set_alloc(
     if auto {
         println!("Set allocation for {BOLD}{id_or_name}{RESET} to {DIM}auto{RESET}");
     } else {
-        println!("Set allocation for {BOLD}{id_or_name}{RESET}: vram={:.1}GB ram={:.1}GB",
-            vram_gb.unwrap_or(0.0), ram_gb.unwrap_or(0.0));
+        println!(
+            "Set allocation for {BOLD}{id_or_name}{RESET}: vram={:.1}GB ram={:.1}GB",
+            vram_gb.unwrap_or(0.0),
+            ram_gb.unwrap_or(0.0)
+        );
     }
     Ok(())
 }
@@ -244,7 +317,10 @@ pub async fn run_model(model: &str, backend_override: Option<&str>, cfg: &Config
             );
             let vram = entry.map(|e| e.vram_alloc_gb).unwrap_or(0.0);
             let port = backend.run(&path, vram, 4096)?;
-            println!("Started {BOLD}{model}{RESET} on http://{}:{port}", cfg.llamacpp.host);
+            println!(
+                "Started {BOLD}{model}{RESET} on http://{}:{port}",
+                cfg.llamacpp.host
+            );
         }
         other => bail!("unknown backend: {other}  (use 'ollama' or 'llamacpp')"),
     }
@@ -258,7 +334,10 @@ pub async fn stop_model(model: &str, cfg: &Config) -> Result<()> {
     // llama.cpp would require a persistent process registry (future work).
     println!("{DIM}Ollama unloads models after inactivity.{RESET}");
     println!("To force-unload, send a request with keep_alive=0:");
-    println!("  curl {}/api/generate -d '{{\"model\":\"{model}\",\"keep_alive\":0}}'", cfg.ollama.url);
+    println!(
+        "  curl {}/api/generate -d '{{\"model\":\"{model}\",\"keep_alive\":0}}'",
+        cfg.ollama.url
+    );
     Ok(())
 }
 
@@ -271,18 +350,20 @@ pub async fn pull_model(model: &str, cfg: &Config) -> Result<()> {
     }
     println!("Pulling {BOLD}{model}{RESET} via Ollama…");
     let mut last_status = String::new();
-    ollama.pull(model, |status, completed, total| {
-        if status != last_status {
-            last_status = status.clone();
-        }
-        let pct = total.map(|t| (completed * 100).checked_div(t).unwrap_or(0));
-        match pct {
-            Some(p) => print!("\r  {status:<40} {p:>3}%  "),
-            None    => print!("\r  {status:<40}       "),
-        }
-        use std::io::Write;
-        let _ = std::io::stdout().flush();
-    }).await?;
+    ollama
+        .pull(model, |status, completed, total| {
+            if status != last_status {
+                last_status = status.clone();
+            }
+            let pct = total.map(|t| (completed * 100).checked_div(t).unwrap_or(0));
+            match pct {
+                Some(p) => print!("\r  {status:<40} {p:>3}%  "),
+                None => print!("\r  {status:<40}       "),
+            }
+            use std::io::Write;
+            let _ = std::io::stdout().flush();
+        })
+        .await?;
     println!("\nDone.");
     Ok(())
 }
@@ -301,17 +382,18 @@ pub async fn download(source: &str, file_override: Option<&str>, cfg: &Config) -
             } else {
                 // List GGUF files and pick the first
                 println!("Listing GGUF files in {BOLD}{repo}{RESET}…");
-                let files = download::hf_list_files(
-                    &repo,
-                    hf_cfg.token.as_deref(),
-                    &hf_cfg.endpoint,
-                ).await?;
+                let files =
+                    download::hf_list_files(&repo, hf_cfg.token.as_deref(), &hf_cfg.endpoint)
+                        .await?;
                 if files.is_empty() {
                     bail!("no GGUF files found in {repo}");
                 }
                 println!("Available GGUF files:");
                 for (i, f) in files.iter().enumerate() {
-                    let size_str = f.size.map(|s| format!("{:.1}GB", s as f64 / 1e9)).unwrap_or_default();
+                    let size_str = f
+                        .size
+                        .map(|s| format!("{:.1}GB", s as f64 / 1e9))
+                        .unwrap_or_default();
                     println!("  [{i}] {} {DIM}{size_str}{RESET}", f.filename);
                 }
                 println!("Downloading first: {}", files[0].filename);
@@ -320,7 +402,9 @@ pub async fn download(source: &str, file_override: Option<&str>, cfg: &Config) -
 
             println!("Downloading {BOLD}{file}{RESET} from hf:{repo}…");
             let path = download::hf_download(
-                &repo, &file, &dest_dir,
+                &repo,
+                &file,
+                &dest_dir,
                 hf_cfg.token.as_deref(),
                 &hf_cfg.endpoint,
                 |downloaded, total| {
@@ -328,11 +412,12 @@ pub async fn download(source: &str, file_override: Option<&str>, cfg: &Config) -
                     let mb = downloaded as f64 / 1e6;
                     match pct {
                         Some(p) => print!("\r  {mb:.1} MB  {p:>3}%  "),
-                        None    => print!("\r  {mb:.1} MB        "),
+                        None => print!("\r  {mb:.1} MB        "),
                     }
                     let _ = std::io::stdout().flush();
                 },
-            ).await?;
+            )
+            .await?;
             println!("\nSaved to {}", path.display());
         }
 
@@ -343,10 +428,11 @@ pub async fn download(source: &str, file_override: Option<&str>, cfg: &Config) -
                 let mb = downloaded as f64 / 1e6;
                 match pct {
                     Some(p) => print!("\r  {mb:.1} MB  {p:>3}%  "),
-                    None    => print!("\r  {mb:.1} MB        "),
+                    None => print!("\r  {mb:.1} MB        "),
                 }
                 let _ = std::io::stdout().flush();
-            }).await?;
+            })
+            .await?;
             println!("\nSaved to {}", path.display());
         }
     }
@@ -392,32 +478,49 @@ pub async fn pick(n: usize, index: Option<usize>, cfg: &Config) -> Result<()> {
 
     // Curated fallback list for when llmfit is not installed
     const CURATED: &[(&str, &str)] = &[
-        ("Qwen2.5-7B-Instruct",   "Qwen/Qwen2.5-7B-Instruct"),
-        ("DeepSeek-R1-7B",        "deepseek-ai/DeepSeek-R1-Distill-Qwen-7B"),
+        ("Qwen2.5-7B-Instruct", "Qwen/Qwen2.5-7B-Instruct"),
+        ("DeepSeek-R1-7B", "deepseek-ai/DeepSeek-R1-Distill-Qwen-7B"),
         ("Llama-3.2-3B-Instruct", "meta-llama/Llama-3.2-3B-Instruct"),
-        ("Phi-3.5-mini",          "microsoft/Phi-3.5-mini-instruct"),
-        ("Mistral-7B-Instruct",   "mistralai/Mistral-7B-Instruct-v0.3"),
+        ("Phi-3.5-mini", "microsoft/Phi-3.5-mini-instruct"),
+        ("Mistral-7B-Instruct", "mistralai/Mistral-7B-Instruct-v0.3"),
         ("Qwen2.5-1.5B-Instruct", "Qwen/Qwen2.5-1.5B-Instruct"),
-        ("Gemma-2-2B-IT",         "google/gemma-2-2b-it"),
-        ("SmolLM2-1.7B",          "HuggingFaceTB/SmolLM2-1.7B-Instruct"),
+        ("Gemma-2-2B-IT", "google/gemma-2-2b-it"),
+        ("SmolLM2-1.7B", "HuggingFaceTB/SmolLM2-1.7B-Instruct"),
     ];
 
     // Build display list from llmfit (if available) or curated fallback
-    struct PickEntry { display: String, repo: String }
+    struct PickEntry {
+        display: String,
+        repo: String,
+    }
     let entries: Vec<PickEntry> = if hardware::check(&cfg.llmfit_path) {
         let recs = hardware::recommendations(n.max(8), &cfg.llmfit_path)?;
         println!("{BOLD}{CYAN} Hardware-Aware Recommendations (llmfit){RESET}");
         print_hr();
-        println!("{BOLD}{:<3} {:<36} {:<9} {:<7}{RESET}", "#", "Model", "Fit", "VRAM");
+        println!(
+            "{BOLD}{:<3} {:<36} {:<9} {:<7}{RESET}",
+            "#", "Model", "Fit", "VRAM"
+        );
         print_hr();
-        let entries: Vec<PickEntry> = recs.iter().map(|r| {
-            let short = r.name.splitn(2, '/').last().unwrap_or(&r.name).to_string();
-            PickEntry { display: short, repo: r.name.clone() }
-        }).collect();
+        let entries: Vec<PickEntry> = recs
+            .iter()
+            .map(|r| {
+                let short = r.name.splitn(2, '/').last().unwrap_or(&r.name).to_string();
+                PickEntry {
+                    display: short,
+                    repo: r.name.clone(),
+                }
+            })
+            .collect();
         for (i, (e, r)) in entries.iter().zip(recs.iter()).enumerate() {
             let fc = fit_color_ansi(&r.fit_level);
-            println!("{:<3} {BOLD}{:<36}{RESET} {fc}{:<9}{RESET} {:.1}G",
-                i + 1, e.display, r.fit_level, r.vram_required_gb);
+            println!(
+                "{:<3} {BOLD}{:<36}{RESET} {fc}{:<9}{RESET} {:.1}G",
+                i + 1,
+                e.display,
+                r.fit_level,
+                r.vram_required_gb
+            );
         }
         print_hr();
         entries
@@ -427,25 +530,38 @@ pub async fn pick(n: usize, index: Option<usize>, cfg: &Config) -> Result<()> {
         print_hr();
         println!("{BOLD}{:<3} {:<36}{RESET}", "#", "Model");
         print_hr();
-        let entries: Vec<PickEntry> = show.iter().enumerate().map(|(i, (name, repo))| {
-            println!("{:<3} {BOLD}{:<36}{RESET}", i + 1, name);
-            PickEntry { display: name.to_string(), repo: repo.to_string() }
-        }).collect();
+        let entries: Vec<PickEntry> = show
+            .iter()
+            .enumerate()
+            .map(|(i, (name, repo))| {
+                println!("{:<3} {BOLD}{:<36}{RESET}", i + 1, name);
+                PickEntry {
+                    display: name.to_string(),
+                    repo: repo.to_string(),
+                }
+            })
+            .collect();
         print_hr();
         entries
     };
 
     let chosen_idx = if let Some(i) = index {
-        if i == 0 || i > entries.len() { bail!("index must be between 1 and {}", entries.len()); }
+        if i == 0 || i > entries.len() {
+            bail!("index must be between 1 and {}", entries.len());
+        }
         i - 1
     } else {
         print!("Enter number [1-{}]: ", entries.len());
         io::stdout().flush()?;
         let mut line = String::new();
         io::stdin().lock().read_line(&mut line)?;
-        let num: usize = line.trim().parse()
+        let num: usize = line
+            .trim()
+            .parse()
             .map_err(|_| anyhow::anyhow!("invalid input — enter a number"))?;
-        if num == 0 || num > entries.len() { bail!("index must be between 1 and {}", entries.len()); }
+        if num == 0 || num > entries.len() {
+            bail!("index must be between 1 and {}", entries.len());
+        }
         num - 1
     };
 
@@ -457,11 +573,17 @@ pub async fn pick(n: usize, index: Option<usize>, cfg: &Config) -> Result<()> {
     println!("Searching HuggingFace for GGUF files…");
     let (gguf_repo, files) =
         find_gguf_repo(&chosen.repo, hf_cfg.token.as_deref(), &hf_cfg.endpoint).await?;
-    println!("Found {} GGUF file(s) in {DIM}{gguf_repo}{RESET}", files.len());
+    println!(
+        "Found {} GGUF file(s) in {DIM}{gguf_repo}{RESET}",
+        files.len()
+    );
 
     // Show available quants and auto-select best
     for (i, f) in files.iter().enumerate() {
-        let size_str = f.size.map(|s| format!("{:.1} GB", s as f64 / 1e9)).unwrap_or_default();
+        let size_str = f
+            .size
+            .map(|s| format!("{:.1} GB", s as f64 / 1e9))
+            .unwrap_or_default();
         println!("  [{i}] {} {DIM}{size_str}{RESET}", f.filename);
     }
     let chosen_file = pick_best_quant(&files);
@@ -469,7 +591,8 @@ pub async fn pick(n: usize, index: Option<usize>, cfg: &Config) -> Result<()> {
 
     // Download with progress
     let dest_dir = config::models_dir()?;
-    let size_str = chosen_file.size
+    let size_str = chosen_file
+        .size
         .map(|s| format!(" ({:.1} GB)", s as f64 / 1e9))
         .unwrap_or_default();
     println!("Downloading{size_str}…");
@@ -485,16 +608,19 @@ pub async fn pick(n: usize, index: Option<usize>, cfg: &Config) -> Result<()> {
             let mb = downloaded as f64 / 1e6;
             match pct {
                 Some(p) => print!("\r  {mb:.1} MB  {p:>3}%  "),
-                None    => print!("\r  {mb:.1} MB        "),
+                None => print!("\r  {mb:.1} MB        "),
             }
             let _ = std::io::stdout().flush();
         },
-    ).await?;
+    )
+    .await?;
     println!("\nSaved to {DIM}{}{RESET}", local_path.display());
 
     // Extract quantization label from filename
-    let quant = chosen_file.filename
-        .rsplit('-').next()
+    let quant = chosen_file
+        .filename
+        .rsplit('-')
+        .next()
         .and_then(|s| s.strip_suffix(".gguf"))
         .unwrap_or("Q4_K_M")
         .to_string();
@@ -513,13 +639,17 @@ pub async fn pick(n: usize, index: Option<usize>, cfg: &Config) -> Result<()> {
     entry.quantization = quant;
     entry.alloc_auto = true;
     reg.register(entry);
-    if no_active { reg.switch(&short_name); }
+    if no_active {
+        reg.switch(&short_name);
+    }
     registry::save(&reg)?;
 
     println!("{BOLD}{CYAN}✓ Done!{RESET}");
     println!("  Model    : {BOLD}{short_name}{RESET}");
     println!("  File     : {DIM}{}{RESET}", local_path.display());
-    if no_active { println!("  Status   : set as active model"); }
+    if no_active {
+        println!("  Status   : set as active model");
+    }
     println!();
     println!("Next step: {BOLD}deepsage serve{RESET}");
     Ok(())
@@ -543,9 +673,9 @@ async fn find_gguf_repo(
     if parts.len() == 2 {
         let model_part = parts[1];
         for repo in [
-            format!("{}/{}-GGUF", parts[0], model_part),   // same org
-            format!("bartowski/{model_part}-GGUF"),          // bartowski (most common)
-            format!("TheBloke/{model_part}-GGUF"),           // TheBloke fallback
+            format!("{}/{}-GGUF", parts[0], model_part), // same org
+            format!("bartowski/{model_part}-GGUF"),      // bartowski (most common)
+            format!("TheBloke/{model_part}-GGUF"),       // TheBloke fallback
         ] {
             if let Ok(files) = download::hf_list_files(&repo, token, endpoint).await {
                 if !files.is_empty() {
@@ -566,7 +696,10 @@ async fn find_gguf_repo(
 // Preference order: Q4_K_M > Q5_K_M > Q4_K_S > Q4_0 > Q3_K_M > first
 fn pick_best_quant(files: &[download::HfSibling]) -> &download::HfSibling {
     for pref in &["Q4_K_M", "Q5_K_M", "Q4_K_S", "Q4_0", "Q3_K_M", "Q3_K_S"] {
-        if let Some(f) = files.iter().find(|f| f.filename.to_uppercase().contains(pref)) {
+        if let Some(f) = files
+            .iter()
+            .find(|f| f.filename.to_uppercase().contains(pref))
+        {
             return f;
         }
     }
@@ -595,18 +728,36 @@ pub async fn monitor(_cfg: &Config) -> Result<()> {
 
     loop {
         let stats = monitor::collect();
-        execute!(std::io::stdout(), cursor::MoveToColumn(0), terminal::Clear(terminal::ClearType::FromCursorDown))?;
+        execute!(
+            std::io::stdout(),
+            cursor::MoveToColumn(0),
+            terminal::Clear(terminal::ClearType::FromCursorDown)
+        )?;
 
         fn bar(ratio: f32, width: u16) -> String {
             let filled = (ratio * width as f32).round() as usize;
-            let empty  = width as usize - filled;
+            let empty = width as usize - filled;
             format!("[{}{}]", "█".repeat(filled), "░".repeat(empty))
         }
 
-        println!("  CPU  {}  {:.1}%", bar(stats.cpu_pct / 100.0, 30), stats.cpu_pct);
-        println!("  RAM  {}  {:.1}/{:.1} GB", bar(stats.ram_pct(), 30), stats.ram_used_gb, stats.ram_total_gb);
+        println!(
+            "  CPU  {}  {:.1}%",
+            bar(stats.cpu_pct / 100.0, 30),
+            stats.cpu_pct
+        );
+        println!(
+            "  RAM  {}  {:.1}/{:.1} GB",
+            bar(stats.ram_pct(), 30),
+            stats.ram_used_gb,
+            stats.ram_total_gb
+        );
         if stats.swap_total_gb > 0.0 {
-            println!("  Swap {}  {:.1}/{:.1} GB", bar(stats.swap_pct(), 30), stats.swap_used_gb, stats.swap_total_gb);
+            println!(
+                "  Swap {}  {:.1}/{:.1} GB",
+                bar(stats.swap_pct(), 30),
+                stats.swap_used_gb,
+                stats.swap_total_gb
+            );
         }
         std::io::stdout().flush()?;
 
@@ -656,8 +807,18 @@ pub fn configure(
         println!("  default_backend  : {}", cfg.default_backend);
         println!("  ollama.url       : {}", cfg.ollama.url);
         println!("  llamacpp.binary  : {}", cfg.llamacpp.server_binary);
-        println!("  llamacpp.host    : {}:{}", cfg.llamacpp.host, cfg.llamacpp.port);
-        println!("  hf.token         : {}", cfg.huggingface.token.as_deref().map(|_| "****").unwrap_or("not set"));
+        println!(
+            "  llamacpp.host    : {}:{}",
+            cfg.llamacpp.host, cfg.llamacpp.port
+        );
+        println!(
+            "  hf.token         : {}",
+            cfg.huggingface
+                .token
+                .as_deref()
+                .map(|_| "****")
+                .unwrap_or("not set")
+        );
         println!("  llmfit_path      : {}", cfg.llmfit_path);
         if let Ok(p) = config::config_path() {
             println!("\n  Config file: {DIM}{}{RESET}", p.display());
@@ -679,12 +840,14 @@ pub async fn endpoint(model_override: Option<&str>, cfg: &Config) -> Result<()> 
     let reg = registry::load().unwrap_or_default();
 
     let model = match model_override {
-        Some(name) => reg.get(name)
+        Some(name) => reg
+            .get(name)
             .ok_or_else(|| anyhow::anyhow!("model not found: {name}"))?,
-        None => reg.models.iter().find(|m| m.active)
-            .ok_or_else(|| anyhow::anyhow!(
+        None => reg.models.iter().find(|m| m.active).ok_or_else(|| {
+            anyhow::anyhow!(
                 "no active model set — run `deepsage switch <model>` or `deepsage pick`"
-            ))?,
+            )
+        })?,
     };
 
     let (url, example) = match model.backend.as_str() {
@@ -718,21 +881,29 @@ pub async fn endpoint(model_override: Option<&str>, cfg: &Config) -> Result<()> 
 
     // Check reachability
     let client = reqwest::Client::new();
-    let reachable = client.get(
-        url.trim_end_matches("/api/generate")
-           .trim_end_matches("/v1/chat/completions")
-    ).timeout(std::time::Duration::from_secs(2)).send().await.is_ok();
+    let reachable = client
+        .get(
+            url.trim_end_matches("/api/generate")
+                .trim_end_matches("/v1/chat/completions"),
+        )
+        .timeout(std::time::Duration::from_secs(2))
+        .send()
+        .await
+        .is_ok();
 
     println!("{BOLD}{CYAN} Inference Endpoint{RESET}");
     print_hr();
     println!("  Model   : {BOLD}{}{RESET}", model.name);
     println!("  Backend : {}", model.backend);
     println!("  URL     : {BOLD}{CYAN}{url}{RESET}");
-    println!("  Status  : {}", if reachable {
-        "\x1b[32m● reachable\x1b[0m"
-    } else {
-        "\x1b[31m● not reachable — start the backend first\x1b[0m"
-    });
+    println!(
+        "  Status  : {}",
+        if reachable {
+            "\x1b[32m● reachable\x1b[0m"
+        } else {
+            "\x1b[31m● not reachable — start the backend first\x1b[0m"
+        }
+    );
     println!();
     println!("{DIM}Example request:{RESET}");
     println!("{example}");
@@ -748,12 +919,12 @@ pub async fn infer(prompt: &str, model_override: Option<&str>, cfg: &Config) -> 
 
     let reg = registry::load().unwrap_or_default();
     let model = match model_override {
-        Some(name) => reg.get(name)
+        Some(name) => reg
+            .get(name)
             .ok_or_else(|| anyhow::anyhow!("model not found: {name}"))?,
-        None => reg.models.iter().find(|m| m.active)
-            .ok_or_else(|| anyhow::anyhow!(
-                "no active model set — run `deepsage switch <model>` first"
-            ))?,
+        None => reg.models.iter().find(|m| m.active).ok_or_else(|| {
+            anyhow::anyhow!("no active model set — run `deepsage switch <model>` first")
+        })?,
     };
 
     let client = reqwest::Client::new();
@@ -770,11 +941,19 @@ pub async fn infer(prompt: &str, model_override: Option<&str>, cfg: &Config) -> 
                 "prompt": prompt,
                 "stream": true,
             });
-            let resp = client.post(&url).json(&body).send().await
+            let resp = client
+                .post(&url)
+                .json(&body)
+                .send()
+                .await
                 .map_err(|e| anyhow::anyhow!("Ollama not reachable: {e}"))?;
 
             if !resp.status().is_success() {
-                bail!("Ollama error {}: {}", resp.status(), resp.text().await.unwrap_or_default());
+                bail!(
+                    "Ollama error {}: {}",
+                    resp.status(),
+                    resp.text().await.unwrap_or_default()
+                );
             }
 
             use futures_util::StreamExt;
@@ -782,29 +961,40 @@ pub async fn infer(prompt: &str, model_override: Option<&str>, cfg: &Config) -> 
             while let Some(chunk) = stream.next().await {
                 let chunk = chunk?;
                 for line in chunk.split(|&b| b == b'\n') {
-                    if line.is_empty() { continue; }
+                    if line.is_empty() {
+                        continue;
+                    }
                     if let Ok(v) = serde_json::from_slice::<serde_json::Value>(line) {
                         if let Some(text) = v["response"].as_str() {
                             print!("{text}");
                             std::io::stdout().flush()?;
                         }
-                        if v["done"].as_bool().unwrap_or(false) { break; }
+                        if v["done"].as_bool().unwrap_or(false) {
+                            break;
+                        }
                     }
                 }
             }
             println!();
         }
         "llamacpp" => {
-            let url = format!("http://{}:{}/v1/chat/completions",
-                cfg.llamacpp.host, cfg.llamacpp.port);
+            let url = format!(
+                "http://{}:{}/v1/chat/completions",
+                cfg.llamacpp.host, cfg.llamacpp.port
+            );
             let body = serde_json::json!({
                 "model": model.name,
                 "messages": [{"role": "user", "content": prompt}],
                 "stream": false,
             });
-            let resp: serde_json::Value = client.post(&url).json(&body).send().await
+            let resp: serde_json::Value = client
+                .post(&url)
+                .json(&body)
+                .send()
+                .await
                 .map_err(|e| anyhow::anyhow!("llama-server not reachable: {e}"))?
-                .json().await?;
+                .json()
+                .await?;
             let text = resp["choices"][0]["message"]["content"]
                 .as_str()
                 .unwrap_or("[no response]");

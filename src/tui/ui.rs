@@ -1,20 +1,18 @@
 use ratatui::{
-    Frame,
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{
-        Block, Borders, Cell, Gauge, Paragraph, Row, Table, Tabs, Wrap,
-    },
+    widgets::{Block, Borders, Cell, Gauge, Paragraph, Row, Table, Tabs, Wrap},
+    Frame,
 };
 
 use super::app::{App, Tab};
 
-const ACCENT: Color  = Color::Cyan;
-const GOOD:   Color  = Color::Green;
-const WARN:   Color  = Color::Yellow;
-const BAD:    Color  = Color::Red;
-const DIM:    Color  = Color::DarkGray;
+const ACCENT: Color = Color::Cyan;
+const GOOD: Color = Color::Green;
+const WARN: Color = Color::Yellow;
+const BAD: Color = Color::Red;
+const DIM: Color = Color::DarkGray;
 
 pub fn draw(frame: &mut Frame, app: &mut App) {
     let area = frame.area();
@@ -32,9 +30,9 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
     draw_tabs(frame, chunks[1], app);
     match app.active_tab {
         Tab::Dashboard => draw_dashboard(frame, chunks[2], app),
-        Tab::Models    => draw_models(frame, chunks[2], app),
-        Tab::System    => draw_system(frame, chunks[2], app),
-        Tab::Logs      => draw_logs(frame, chunks[2], app),
+        Tab::Models => draw_models(frame, chunks[2], app),
+        Tab::System => draw_system(frame, chunks[2], app),
+        Tab::Logs => draw_logs(frame, chunks[2], app),
     }
     draw_statusbar(frame, chunks[3], app);
 }
@@ -42,22 +40,42 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
 // ── Title bar ────────────────────────────────────────────────────────────────
 
 fn draw_title(frame: &mut Frame, area: Rect, app: &App) {
-    let hw = app.system_info.as_ref().map(|s| {
-        format!("{}  RAM {:.0}GB  VRAM {:.0}GB", s.gpu_name, s.ram_gb, s.vram_gb)
-    }).unwrap_or_else(|| "hardware unknown".into());
+    let hw = app
+        .system_info
+        .as_ref()
+        .map(|s| {
+            format!(
+                "{}  RAM {:.0}GB  VRAM {:.0}GB",
+                s.gpu_name, s.ram_gb, s.vram_gb
+            )
+        })
+        .unwrap_or_else(|| "hardware unknown".into());
 
     let (srv_sym, srv_text, srv_color) = if app.server_running {
-        ("●", format!(" http://127.0.0.1:{}/v1 [{}]", app.server_port, app.server_active_model), GOOD)
+        (
+            "●",
+            format!(
+                " http://127.0.0.1:{}/v1 [{}]",
+                app.server_port, app.server_active_model
+            ),
+            GOOD,
+        )
     } else {
         ("○", " not running".into(), DIM)
     };
 
     let title = Paragraph::new(Line::from(vec![
-        Span::styled(" DeepSage ", Style::default().fg(ACCENT).add_modifier(Modifier::BOLD)),
+        Span::styled(
+            " DeepSage ",
+            Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+        ),
         Span::styled("│ ", Style::default().fg(DIM)),
         Span::styled(hw, Style::default().fg(Color::White)),
         Span::styled("  │ Server ", Style::default().fg(DIM)),
-        Span::styled(srv_sym, Style::default().fg(srv_color).add_modifier(Modifier::BOLD)),
+        Span::styled(
+            srv_sym,
+            Style::default().fg(srv_color).add_modifier(Modifier::BOLD),
+        ),
         Span::styled(srv_text, Style::default().fg(srv_color)),
     ]));
     frame.render_widget(title, area);
@@ -66,9 +84,11 @@ fn draw_title(frame: &mut Frame, area: Rect, app: &App) {
 // ── Tabs ──────────────────────────────────────────────────────────────────────
 
 fn draw_tabs(frame: &mut Frame, area: Rect, app: &App) {
-    let titles: Vec<Line> = Tab::NAMES.iter().enumerate().map(|(i, &name)| {
-        Line::from(format!(" {} [{}] ", name, i + 1))
-    }).collect();
+    let titles: Vec<Line> = Tab::NAMES
+        .iter()
+        .enumerate()
+        .map(|(i, &name)| Line::from(format!(" {} [{}] ", name, i + 1)))
+        .collect();
     let tabs = Tabs::new(titles)
         .select(app.active_tab.index())
         .block(Block::default().borders(Borders::BOTTOM))
@@ -105,26 +125,36 @@ fn draw_running_models(frame: &mut Frame, area: Rect, app: &App) {
     let header = Row::new(vec!["Model", "Backend", "OpenAI Endpoint"])
         .style(Style::default().fg(ACCENT).add_modifier(Modifier::BOLD));
 
-    let rows: Vec<Row> = app.running_models.iter().map(|m| {
-        let endpoint = m.endpoint.as_deref().unwrap_or("-");
-        Row::new(vec![
-            Cell::from(m.name.clone()).style(Style::default().add_modifier(Modifier::BOLD)),
-            Cell::from(m.backend.clone()).style(Style::default().fg(GOOD)),
-            Cell::from(format!("{endpoint}/chat/completions"))
-                .style(Style::default().fg(ACCENT)),
-        ])
-    }).collect();
+    let rows: Vec<Row> = app
+        .running_models
+        .iter()
+        .map(|m| {
+            let endpoint = m.endpoint.as_deref().unwrap_or("-");
+            Row::new(vec![
+                Cell::from(m.name.clone()).style(Style::default().add_modifier(Modifier::BOLD)),
+                Cell::from(m.backend.clone()).style(Style::default().fg(GOOD)),
+                Cell::from(format!("{endpoint}/chat/completions"))
+                    .style(Style::default().fg(ACCENT)),
+            ])
+        })
+        .collect();
 
     let placeholder: Vec<Row> = if rows.is_empty() {
-        vec![Row::new(vec![
-            Cell::from("— stopped —  run: deepsage serve")
-                .style(Style::default().fg(DIM))
-        ])]
-    } else { vec![] };
+        vec![Row::new(vec![Cell::from(
+            "— stopped —  run: deepsage serve",
+        )
+        .style(Style::default().fg(DIM))])]
+    } else {
+        vec![]
+    };
 
     let table = Table::new(
         rows.into_iter().chain(placeholder).collect::<Vec<_>>(),
-        [Constraint::Min(18), Constraint::Length(10), Constraint::Min(30)],
+        [
+            Constraint::Min(18),
+            Constraint::Length(10),
+            Constraint::Min(30),
+        ],
     )
     .header(header)
     .block(Block::default().title(title).borders(Borders::ALL));
@@ -135,8 +165,17 @@ fn draw_resources(frame: &mut Frame, area: Rect, app: &App) {
     let s = &app.resource_stats;
     let chunks = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([Constraint::Length(1), Constraint::Length(2), Constraint::Length(2), Constraint::Length(2), Constraint::Min(0)])
-        .split(area.inner(ratatui::layout::Margin { vertical: 1, horizontal: 1 }));
+        .constraints([
+            Constraint::Length(1),
+            Constraint::Length(2),
+            Constraint::Length(2),
+            Constraint::Length(2),
+            Constraint::Min(0),
+        ])
+        .split(area.inner(ratatui::layout::Margin {
+            vertical: 1,
+            horizontal: 1,
+        }));
 
     let block = Block::default().title(" Resources ").borders(Borders::ALL);
     frame.render_widget(block, area);
@@ -166,32 +205,45 @@ fn draw_resources(frame: &mut Frame, area: Rect, app: &App) {
 }
 
 fn gauge_color(ratio: f32) -> Color {
-    if ratio < 0.6 { GOOD } else if ratio < 0.85 { WARN } else { BAD }
+    if ratio < 0.6 {
+        GOOD
+    } else if ratio < 0.85 {
+        WARN
+    } else {
+        BAD
+    }
 }
 
 fn draw_recommendations(frame: &mut Frame, area: Rect, app: &mut App) {
-    let header = Row::new(vec!["#", "Model", "Fit", "Score", "VRAM", "TPS", "Quant", "Runtime"])
-        .style(Style::default().fg(ACCENT).add_modifier(Modifier::BOLD));
+    let header = Row::new(vec![
+        "#", "Model", "Fit", "Score", "VRAM", "TPS", "Quant", "Runtime",
+    ])
+    .style(Style::default().fg(ACCENT).add_modifier(Modifier::BOLD));
 
-    let rows: Vec<Row> = app.recommendations.iter().enumerate().map(|(i, r)| {
-        let fit_color = match r.fit_level.to_lowercase().as_str() {
-            s if s.contains("perfect") => GOOD,
-            s if s.contains("good")    => Color::LightGreen,
-            s if s.contains("ok")      => WARN,
-            _                           => BAD,
-        };
-        let short_name = r.name.splitn(2, '/').last().unwrap_or(&r.name).to_string();
-        Row::new(vec![
-            Cell::from(format!("{}", i + 1)),
-            Cell::from(short_name).style(Style::default().add_modifier(Modifier::BOLD)),
-            Cell::from(r.fit_level.clone()).style(Style::default().fg(fit_color)),
-            Cell::from(format!("{:.1}", r.score)),
-            Cell::from(format!("{:.1}G", r.vram_required_gb)),
-            Cell::from(format!("{:.1}", r.estimated_tps)),
-            Cell::from(r.quantization.clone()),
-            Cell::from(r.backend.clone()).style(Style::default().fg(DIM)),
-        ])
-    }).collect();
+    let rows: Vec<Row> = app
+        .recommendations
+        .iter()
+        .enumerate()
+        .map(|(i, r)| {
+            let fit_color = match r.fit_level.to_lowercase().as_str() {
+                s if s.contains("perfect") => GOOD,
+                s if s.contains("good") => Color::LightGreen,
+                s if s.contains("ok") => WARN,
+                _ => BAD,
+            };
+            let short_name = r.name.splitn(2, '/').last().unwrap_or(&r.name).to_string();
+            Row::new(vec![
+                Cell::from(format!("{}", i + 1)),
+                Cell::from(short_name).style(Style::default().add_modifier(Modifier::BOLD)),
+                Cell::from(r.fit_level.clone()).style(Style::default().fg(fit_color)),
+                Cell::from(format!("{:.1}", r.score)),
+                Cell::from(format!("{:.1}G", r.vram_required_gb)),
+                Cell::from(format!("{:.1}", r.estimated_tps)),
+                Cell::from(r.quantization.clone()),
+                Cell::from(r.backend.clone()).style(Style::default().fg(DIM)),
+            ])
+        })
+        .collect();
 
     let placeholder: Vec<Row> = if rows.is_empty() {
         vec![Row::new(vec![Cell::from(
@@ -199,19 +251,33 @@ fn draw_recommendations(frame: &mut Frame, area: Rect, app: &mut App) {
                 "Loading recommendations…"
             } else {
                 "llmfit not found — install with: brew install llmfit"
-            }
-        ).style(Style::default().fg(DIM))])]
-    } else { vec![] };
+            },
+        )
+        .style(Style::default().fg(DIM))])]
+    } else {
+        vec![]
+    };
 
     let table = Table::new(
         rows.into_iter().chain(placeholder).collect::<Vec<_>>(),
         // #  Model  Fit  Score  VRAM  TPS  Quant  Runtime
-        [Constraint::Length(3), Constraint::Min(22), Constraint::Length(9),
-         Constraint::Length(6), Constraint::Length(6), Constraint::Length(6),
-         Constraint::Length(11), Constraint::Min(8)],
+        [
+            Constraint::Length(3),
+            Constraint::Min(22),
+            Constraint::Length(9),
+            Constraint::Length(6),
+            Constraint::Length(6),
+            Constraint::Length(6),
+            Constraint::Length(11),
+            Constraint::Min(8),
+        ],
     )
     .header(header)
-    .block(Block::default().title(" llmfit Recommendations ").borders(Borders::ALL));
+    .block(
+        Block::default()
+            .title(" llmfit Recommendations ")
+            .borders(Borders::ALL),
+    );
     frame.render_widget(table, area);
 }
 
@@ -242,38 +308,71 @@ fn draw_models(frame: &mut Frame, area: Rect, app: &mut App) {
     frame.render_widget(search, chunks[0]);
 
     // Models table
-    let header = Row::new(vec!["Name", "Source", "Backend", "Quant", "VRAM", "RAM", "Active"])
-        .style(Style::default().fg(ACCENT).add_modifier(Modifier::BOLD));
+    let header = Row::new(vec![
+        "Name", "Source", "Backend", "Quant", "VRAM", "RAM", "Active",
+    ])
+    .style(Style::default().fg(ACCENT).add_modifier(Modifier::BOLD));
 
-    let filtered = app.filtered_models().into_iter().cloned().collect::<Vec<_>>();
-    let rows: Vec<Row> = filtered.iter().map(|m| {
-        let active_marker = if m.active { "●" } else { "○" };
-        let active_color  = if m.active { GOOD } else { DIM };
-        let alloc_note    = if m.alloc_auto { "auto".into() } else { format!("{:.1}G", m.vram_alloc_gb) };
-        Row::new(vec![
-            Cell::from(m.name.clone()).style(Style::default().add_modifier(Modifier::BOLD)),
-            Cell::from(m.source.to_string()).style(Style::default().fg(DIM)),
-            Cell::from(m.backend.clone()),
-            Cell::from(m.quantization.clone()),
-            Cell::from(alloc_note),
-            Cell::from(format!("{:.1}G", m.ram_alloc_gb)),
-            Cell::from(active_marker).style(Style::default().fg(active_color)),
-        ])
-    }).collect();
+    let filtered = app
+        .filtered_models()
+        .into_iter()
+        .cloned()
+        .collect::<Vec<_>>();
+    let rows: Vec<Row> = filtered
+        .iter()
+        .map(|m| {
+            let active_marker = if m.active { "●" } else { "○" };
+            let active_color = if m.active { GOOD } else { DIM };
+            let alloc_note = if m.alloc_auto {
+                "auto".into()
+            } else {
+                format!("{:.1}G", m.vram_alloc_gb)
+            };
+            Row::new(vec![
+                Cell::from(m.name.clone()).style(Style::default().add_modifier(Modifier::BOLD)),
+                Cell::from(m.source.to_string()).style(Style::default().fg(DIM)),
+                Cell::from(m.backend.clone()),
+                Cell::from(m.quantization.clone()),
+                Cell::from(alloc_note),
+                Cell::from(format!("{:.1}G", m.ram_alloc_gb)),
+                Cell::from(active_marker).style(Style::default().fg(active_color)),
+            ])
+        })
+        .collect();
 
     let placeholder: Vec<Row> = if rows.is_empty() {
-        vec![Row::new(vec![Cell::from("No models registered. Use: deepsage register <model>").style(Style::default().fg(DIM))])]
-    } else { vec![] };
+        vec![Row::new(vec![Cell::from(
+            "No models registered. Use: deepsage register <model>",
+        )
+        .style(Style::default().fg(DIM))])]
+    } else {
+        vec![]
+    };
 
     let table = Table::new(
         rows.into_iter().chain(placeholder).collect::<Vec<_>>(),
-        [Constraint::Min(18), Constraint::Min(22), Constraint::Length(9),
-         Constraint::Length(10), Constraint::Length(7), Constraint::Length(6), Constraint::Length(7)],
+        [
+            Constraint::Min(18),
+            Constraint::Min(22),
+            Constraint::Length(9),
+            Constraint::Length(10),
+            Constraint::Length(7),
+            Constraint::Length(6),
+            Constraint::Length(7),
+        ],
     )
     .header(header)
-    .row_highlight_style(Style::default().bg(Color::DarkGray).add_modifier(Modifier::BOLD))
+    .row_highlight_style(
+        Style::default()
+            .bg(Color::DarkGray)
+            .add_modifier(Modifier::BOLD),
+    )
     .highlight_symbol("▶ ")
-    .block(Block::default().title(" Registered Models ").borders(Borders::ALL));
+    .block(
+        Block::default()
+            .title(" Registered Models ")
+            .borders(Borders::ALL),
+    );
 
     let mut state = app.models_table.clone();
     frame.render_stateful_widget(table, chunks[1], &mut state);
@@ -309,13 +408,22 @@ fn draw_system(frame: &mut Frame, area: Rect, app: &App) {
             ]),
             Line::from(vec![
                 Span::styled("  VRAM       ", Style::default().fg(ACCENT)),
-                Span::raw(format!("{:.1} GB{}", s.vram_gb,
-                    if s.unified_memory { " (shared with RAM)" } else { "" })),
+                Span::raw(format!(
+                    "{:.1} GB{}",
+                    s.vram_gb,
+                    if s.unified_memory {
+                        " (shared with RAM)"
+                    } else {
+                        ""
+                    }
+                )),
             ]),
             Line::from(""),
             Line::from(Span::styled(
                 "  Memory Allocation",
-                Style::default().fg(ACCENT).add_modifier(Modifier::UNDERLINED),
+                Style::default()
+                    .fg(ACCENT)
+                    .add_modifier(Modifier::UNDERLINED),
             )),
             Line::from(vec![
                 Span::styled("  Registered models  ", Style::default().fg(DIM)),
@@ -336,7 +444,11 @@ fn draw_system(frame: &mut Frame, area: Rect, app: &App) {
     };
 
     let para = Paragraph::new(text)
-        .block(Block::default().title(" System Hardware ").borders(Borders::ALL))
+        .block(
+            Block::default()
+                .title(" System Hardware ")
+                .borders(Borders::ALL),
+        )
         .wrap(Wrap { trim: false });
     frame.render_widget(para, area);
 }
@@ -355,7 +467,11 @@ fn draw_logs(frame: &mut Frame, area: Rect, app: &App) {
 // ── Status bar ────────────────────────────────────────────────────────────────
 
 fn draw_statusbar(frame: &mut Frame, area: Rect, app: &App) {
-    let msg = app.status_msg.as_ref().map(|(m, _)| m.as_str()).unwrap_or("");
+    let msg = app
+        .status_msg
+        .as_ref()
+        .map(|(m, _)| m.as_str())
+        .unwrap_or("");
 
     let hints = " q:Quit  Tab:Next  r:Run  s:Stop  p:Pull  d:Del  /:Search  PgUp/Dn:Scroll ";
     let span = if !msg.is_empty() {

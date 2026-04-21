@@ -31,7 +31,11 @@ pub async fn run(config: Config) -> Result<()> {
 
     // Always restore terminal
     disable_raw_mode()?;
-    execute!(terminal.backend_mut(), LeaveAlternateScreen, DisableMouseCapture)?;
+    execute!(
+        terminal.backend_mut(),
+        LeaveAlternateScreen,
+        DisableMouseCapture
+    )?;
     terminal.show_cursor()?;
 
     result
@@ -51,7 +55,9 @@ async fn event_loop(
             }
         }
 
-        if app.should_quit { break; }
+        if app.should_quit {
+            break;
+        }
 
         // Periodic data refresh
         if app.should_refresh() {
@@ -102,7 +108,10 @@ async fn refresh_data(app: &mut App) {
             .timeout(std::time::Duration::from_millis(800))
             .build()
         {
-            if client.get(&url).send().await
+            if client
+                .get(&url)
+                .send()
+                .await
                 .map(|r| r.status().is_success())
                 .unwrap_or(false)
             {

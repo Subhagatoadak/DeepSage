@@ -23,7 +23,10 @@ pub async fn hf_list_files(
     let resp: serde_json::Value = client.get(&url).send().await?.json().await?;
     let siblings: Vec<HfSibling> =
         serde_json::from_value(resp["siblings"].clone()).unwrap_or_default();
-    let mut gguf: Vec<_> = siblings.into_iter().filter(|s| s.filename.ends_with(".gguf")).collect();
+    let mut gguf: Vec<_> = siblings
+        .into_iter()
+        .filter(|s| s.filename.ends_with(".gguf"))
+        .collect();
     gguf.sort_by_key(|s| s.filename.clone());
     Ok(gguf)
 }
@@ -133,8 +136,15 @@ pub fn parse_source(source: &str) -> Result<DownloadSource> {
             _ => bail!("invalid hf source: {source}"),
         }
     } else if source.starts_with("https://") || source.starts_with("http://") {
-        let filename = source.split('/').next_back().unwrap_or("model.gguf").to_string();
-        Ok(DownloadSource::DirectUrl { url: source.to_string(), filename })
+        let filename = source
+            .split('/')
+            .next_back()
+            .unwrap_or("model.gguf")
+            .to_string();
+        Ok(DownloadSource::DirectUrl {
+            url: source.to_string(),
+            filename,
+        })
     } else {
         bail!("unknown source format: {source}  (use hf:owner/repo/file.gguf or https://...)")
     }

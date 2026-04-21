@@ -69,11 +69,15 @@ pub struct Registry {
 
 impl Registry {
     pub fn get(&self, id_or_name: &str) -> Option<&ModelEntry> {
-        self.models.iter().find(|m| m.id == id_or_name || m.name == id_or_name)
+        self.models
+            .iter()
+            .find(|m| m.id == id_or_name || m.name == id_or_name)
     }
 
     pub fn get_mut(&mut self, id_or_name: &str) -> Option<&mut ModelEntry> {
-        self.models.iter_mut().find(|m| m.id == id_or_name || m.name == id_or_name)
+        self.models
+            .iter_mut()
+            .find(|m| m.id == id_or_name || m.name == id_or_name)
     }
 
     pub fn register(&mut self, entry: ModelEntry) {
@@ -87,7 +91,8 @@ impl Registry {
 
     pub fn remove(&mut self, id_or_name: &str) -> bool {
         let before = self.models.len();
-        self.models.retain(|m| m.id != id_or_name && m.name != id_or_name);
+        self.models
+            .retain(|m| m.id != id_or_name && m.name != id_or_name);
         self.models.len() < before
     }
 
@@ -97,19 +102,34 @@ impl Registry {
         for m in &mut self.models {
             m.active = m.id == id_or_name || m.name == id_or_name;
         }
-        self.active_model = self.models.iter().find(|m| m.active).map(|m| m.name.clone());
+        self.active_model = self
+            .models
+            .iter()
+            .find(|m| m.active)
+            .map(|m| m.name.clone());
         old
     }
 
     /// Set memory allocation for a model. Pass None for vram/ram to use auto.
-    pub fn set_alloc(&mut self, id_or_name: &str, vram_gb: Option<f32>, ram_gb: Option<f32>) -> bool {
+    pub fn set_alloc(
+        &mut self,
+        id_or_name: &str,
+        vram_gb: Option<f32>,
+        ram_gb: Option<f32>,
+    ) -> bool {
         if let Some(m) = self.get_mut(id_or_name) {
             match (vram_gb, ram_gb) {
-                (None, None) => { m.alloc_auto = true; }
+                (None, None) => {
+                    m.alloc_auto = true;
+                }
                 (v, r) => {
                     m.alloc_auto = false;
-                    if let Some(v) = v { m.vram_alloc_gb = v; }
-                    if let Some(r) = r { m.ram_alloc_gb = r; }
+                    if let Some(v) = v {
+                        m.vram_alloc_gb = v;
+                    }
+                    if let Some(r) = r {
+                        m.ram_alloc_gb = r;
+                    }
                 }
             }
             true
@@ -120,7 +140,11 @@ impl Registry {
 
     /// Total manually allocated VRAM across all models.
     pub fn total_vram_alloc(&self) -> f32 {
-        self.models.iter().filter(|m| !m.alloc_auto).map(|m| m.vram_alloc_gb).sum()
+        self.models
+            .iter()
+            .filter(|m| !m.alloc_auto)
+            .map(|m| m.vram_alloc_gb)
+            .sum()
     }
 }
 

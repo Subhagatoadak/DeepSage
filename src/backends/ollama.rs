@@ -49,11 +49,18 @@ pub struct OllamaBackend {
 
 impl OllamaBackend {
     pub fn new(url: impl Into<String>) -> Self {
-        Self { client: reqwest::Client::new(), url: url.into() }
+        Self {
+            client: reqwest::Client::new(),
+            url: url.into(),
+        }
     }
 
     pub async fn health(&self) -> bool {
-        self.client.get(format!("{}/", self.url)).send().await.is_ok()
+        self.client
+            .get(format!("{}/", self.url))
+            .send()
+            .await
+            .is_ok()
     }
 
     pub async fn list_models(&self) -> Result<Vec<OllamaModel>> {
@@ -101,7 +108,10 @@ impl OllamaBackend {
         let resp = self
             .client
             .post(format!("{}/api/pull", self.url))
-            .json(&PullRequest { name: model.to_string(), stream: true })
+            .json(&PullRequest {
+                name: model.to_string(),
+                stream: true,
+            })
             .send()
             .await
             .context("ollama not reachable")?;
@@ -114,7 +124,9 @@ impl OllamaBackend {
         while let Some(chunk) = stream.next().await {
             let chunk = chunk?;
             for line in chunk.split(|&b| b == b'\n') {
-                if line.is_empty() { continue; }
+                if line.is_empty() {
+                    continue;
+                }
                 if let Ok(v) = serde_json::from_slice::<serde_json::Value>(line) {
                     let status = v["status"].as_str().unwrap_or("").to_string();
                     let completed = v["completed"].as_u64().unwrap_or(0);
@@ -130,7 +142,9 @@ impl OllamaBackend {
         let resp = self
             .client
             .delete(format!("{}/api/delete", self.url))
-            .json(&DeleteRequest { name: model.to_string() })
+            .json(&DeleteRequest {
+                name: model.to_string(),
+            })
             .send()
             .await?;
         if !resp.status().is_success() {

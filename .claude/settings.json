@@ -19,7 +19,8 @@
       "Read(//Users/subhagatoadak/.local/share/deepsage/**)",
       "Read(//Users/subhagatoadak/**)",
       "Bash(cargo clippy *)",
-      "Bash(deepsage --version)"
+      "Bash(deepsage --version)",
+      "Bash(cargo fmt *)"
     ]
   }
 }

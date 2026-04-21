@@ -11,10 +11,18 @@ pub struct ResourceStats {
 
 impl ResourceStats {
     pub fn ram_pct(&self) -> f32 {
-        if self.ram_total_gb > 0.0 { self.ram_used_gb / self.ram_total_gb } else { 0.0 }
+        if self.ram_total_gb > 0.0 {
+            self.ram_used_gb / self.ram_total_gb
+        } else {
+            0.0
+        }
     }
     pub fn swap_pct(&self) -> f32 {
-        if self.swap_total_gb > 0.0 { self.swap_used_gb / self.swap_total_gb } else { 0.0 }
+        if self.swap_total_gb > 0.0 {
+            self.swap_used_gb / self.swap_total_gb
+        } else {
+            0.0
+        }
     }
 }
 

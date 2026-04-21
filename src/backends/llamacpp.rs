@@ -40,16 +40,21 @@ pub fn spawn_server(
 ) -> Result<Child> {
     Command::new(binary)
         .args([
-            "--model", &model_path.to_string_lossy(),
-            "--host", host,
-            "--port", &port.to_string(),
-            "--n-gpu-layers", &n_gpu_layers.to_string(),
-            "--ctx-size", &ctx_size.to_string(),
+            "--model",
+            &model_path.to_string_lossy(),
+            "--host",
+            host,
+            "--port",
+            &port.to_string(),
+            "--n-gpu-layers",
+            &n_gpu_layers.to_string(),
+            "--ctx-size",
+            &ctx_size.to_string(),
         ])
         .spawn()
-        .with_context(|| format!(
-            "failed to spawn '{binary}'\nInstall with: brew install llama.cpp"
-        ))
+        .with_context(|| {
+            format!("failed to spawn '{binary}'\nInstall with: brew install llama.cpp")
+        })
 }
 
 /// Poll llama-server's /health endpoint until it responds or we time out.
@@ -61,8 +66,7 @@ pub async fn wait_for_ready(host: &str, port: u16, timeout_secs: u64) -> bool {
     else {
         return false;
     };
-    let deadline =
-        std::time::Instant::now() + std::time::Duration::from_secs(timeout_secs);
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(timeout_secs);
     while std::time::Instant::now() < deadline {
         if client
             .get(&url)
@@ -90,7 +94,12 @@ pub struct LlamaCppBackend {
 }
 
 impl LlamaCppBackend {
-    pub fn new(server_binary: impl Into<String>, model_dir: PathBuf, host: impl Into<String>, base_port: u16) -> Self {
+    pub fn new(
+        server_binary: impl Into<String>,
+        model_dir: PathBuf,
+        host: impl Into<String>,
+        base_port: u16,
+    ) -> Self {
         Self {
             server_binary: server_binary.into(),
             model_dir,
@@ -130,11 +139,16 @@ impl LlamaCppBackend {
 
         let child = Command::new(&self.server_binary)
             .args([
-                "--model", &key,
-                "--host", &self.host,
-                "--port", &port.to_string(),
-                "--n-gpu-layers", &n_gpu_layers.to_string(),
-                "--ctx-size", &ctx_size.to_string(),
+                "--model",
+                &key,
+                "--host",
+                &self.host,
+                "--port",
+                &port.to_string(),
+                "--n-gpu-layers",
+                &n_gpu_layers.to_string(),
+                "--ctx-size",
+                &ctx_size.to_string(),
             ])
             .spawn()
             .with_context(|| format!("failed to spawn {}", self.server_binary))?;
@@ -178,7 +192,11 @@ impl LlamaCppBackend {
                     pid: Some(child.id()),
                     vram_gb: 0.0,
                     ram_gb: 0.0,
-                    endpoint: Some(format!("http://{}:{}/v1", self.host, self.base_port + i as u16)),
+                    endpoint: Some(format!(
+                        "http://{}:{}/v1",
+                        self.host,
+                        self.base_port + i as u16
+                    )),
                 }
             })
             .collect()

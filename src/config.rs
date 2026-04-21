@@ -31,7 +31,9 @@ pub struct OllamaConfig {
 
 impl Default for OllamaConfig {
     fn default() -> Self {
-        Self { url: "http://localhost:11434".into() }
+        Self {
+            url: "http://localhost:11434".into(),
+        }
     }
 }
 
@@ -83,8 +85,12 @@ pub struct Config {
     pub default_model: String,
 }
 
-fn default_backend() -> String { "ollama".into() }
-fn default_llmfit() -> String { "llmfit".into() }
+fn default_backend() -> String {
+    "ollama".into()
+}
+fn default_llmfit() -> String {
+    "llmfit".into()
+}
 
 pub fn load() -> Result<Config> {
     let path = config_path()?;

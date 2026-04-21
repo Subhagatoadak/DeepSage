@@ -11,8 +11,8 @@ llmfit not found. Install it with:
   port install llmfit        (macOS via MacPorts)";
 
 const BREW_CANDIDATES: &[&str] = &[
-    "/opt/homebrew/bin/llmfit",       // Apple Silicon
-    "/usr/local/bin/llmfit",          // Intel Mac / Linux Homebrew
+    "/opt/homebrew/bin/llmfit", // Apple Silicon
+    "/usr/local/bin/llmfit",    // Intel Mac / Linux Homebrew
     "/home/linuxbrew/.linuxbrew/bin/llmfit",
 ];
 
@@ -79,12 +79,8 @@ pub struct ModelRecommendation {
 }
 
 fn run_json<T: for<'de> Deserialize<'de>>(llmfit_path: &str, args: &[&str]) -> Result<T> {
-    let bin = resolve(llmfit_path)
-        .ok_or_else(|| anyhow::anyhow!("{}", INSTALL_HINT))?;
-    let out = Command::new(&bin)
-        .args(args)
-        .arg("--json")
-        .output()?;
+    let bin = resolve(llmfit_path).ok_or_else(|| anyhow::anyhow!("{}", INSTALL_HINT))?;
+    let out = Command::new(&bin).args(args).arg("--json").output()?;
     if !out.status.success() {
         bail!("llmfit: {}", String::from_utf8_lossy(&out.stderr).trim());
     }
@@ -94,8 +90,12 @@ fn run_json<T: for<'de> Deserialize<'de>>(llmfit_path: &str, args: &[&str]) -> R
 
 /// Extract models array from llmfit JSON: tries `v["models"]`, then root array.
 fn extract_models(v: serde_json::Value) -> serde_json::Value {
-    if let Some(arr) = v.get("models") { return arr.clone(); }
-    if v.is_array() { return v; }
+    if let Some(arr) = v.get("models") {
+        return arr.clone();
+    }
+    if v.is_array() {
+        return v;
+    }
     serde_json::Value::Array(vec![])
 }
 
@@ -113,7 +113,9 @@ pub fn recommendations(n: usize, llmfit_path: &str) -> Result<Vec<ModelRecommend
 
 pub fn fit_scores(perfect_only: bool, llmfit_path: &str) -> Result<Vec<ModelRecommendation>> {
     let mut args = vec!["fit"];
-    if perfect_only { args.push("--perfect"); }
+    if perfect_only {
+        args.push("--perfect");
+    }
     let v: serde_json::Value = run_json(llmfit_path, &args)?;
     Ok(serde_json::from_value(extract_models(v))?)
 }
@@ -121,8 +123,7 @@ pub fn fit_scores(perfect_only: bool, llmfit_path: &str) -> Result<Vec<ModelReco
 /// Run a llmfit subcommand and stream its output directly to the terminal.
 /// Used for commands like `search` that don't support --json.
 pub fn run_passthrough(llmfit_path: &str, args: &[&str]) -> Result<()> {
-    let bin = resolve(llmfit_path)
-        .ok_or_else(|| anyhow::anyhow!("{}", INSTALL_HINT))?;
+    let bin = resolve(llmfit_path).ok_or_else(|| anyhow::anyhow!("{}", INSTALL_HINT))?;
     let status = Command::new(&bin).args(args).status()?;
     if !status.success() {
         bail!("llmfit exited with status {status}");
