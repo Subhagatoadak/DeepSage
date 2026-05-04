@@ -479,11 +479,11 @@ fn draw_chat(frame: &mut Frame, area: Rect, app: &App) {
     let mut lines: Vec<Line> = Vec::new();
     for msg in &app.chat_messages {
         let (label, color, dim_content) = match msg.role.as_str() {
-            "user"        => ("You   ", ACCENT, false),
-            "assistant"   => ("AI    ", GOOD,   false),
-            "tool_call"   => ("Tool▶ ", WARN,   true),
+            "user" => ("You   ", ACCENT, false),
+            "assistant" => ("AI    ", GOOD, false),
+            "tool_call" => ("Tool▶ ", WARN, true),
             "tool_result" => ("Tool← ", Color::Magenta, true),
-            _             => ("      ", DIM,    true),
+            _ => ("      ", DIM, true),
         };
         lines.push(Line::from(Span::styled(
             format!("{label}:"),
@@ -500,10 +500,7 @@ fn draw_chat(frame: &mut Frame, area: Rect, app: &App) {
         }
         // Blinking cursor while streaming into empty assistant bubble
         if msg.content.is_empty() && msg.role == "assistant" {
-            lines.push(Line::from(Span::styled(
-                "  ▋",
-                Style::default().fg(GOOD),
-            )));
+            lines.push(Line::from(Span::styled("  ▋", Style::default().fg(GOOD))));
         }
         lines.push(Line::from(""));
     }
@@ -582,15 +579,9 @@ fn draw_statusbar(frame: &mut Frame, area: Rect, app: &App) {
         .unwrap_or("");
 
     let hints = match app.active_tab {
-        Tab::Chat if app.chat_active => {
-            " Enter:Send  Esc:Cancel input "
-        }
-        Tab::Chat => {
-            " i:Type  q:Quit  Tab:Next  PgUp/Dn:Scroll "
-        }
-        _ => {
-            " q:Quit  Tab:Next  r:Run  s:Stop  p:Pull  d:Del  /:Search  PgUp/Dn:Scroll "
-        }
+        Tab::Chat if app.chat_active => " Enter:Send  Esc:Cancel input ",
+        Tab::Chat => " i:Type  q:Quit  Tab:Next  PgUp/Dn:Scroll ",
+        _ => " q:Quit  Tab:Next  r:Run  s:Stop  p:Pull  d:Del  /:Search  PgUp/Dn:Scroll ",
     };
 
     let span = if !msg.is_empty() {

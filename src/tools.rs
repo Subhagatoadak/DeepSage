@@ -105,8 +105,8 @@ pub struct ToolCall {
 /// Returns the result as a string to feed back to the model.
 pub async fn execute(name: &str, arguments: &str) -> Result<String> {
     // Arguments may arrive as a JSON string (OpenAI format) or JSON object (Ollama)
-    let args: serde_json::Value = serde_json::from_str(arguments)
-        .unwrap_or(serde_json::Value::Object(Default::default()));
+    let args: serde_json::Value =
+        serde_json::from_str(arguments).unwrap_or(serde_json::Value::Object(Default::default()));
 
     match name {
         "shell" => {
@@ -147,7 +147,11 @@ pub fn extract_tool_calls(response: &serde_json::Value) -> Vec<ToolCall> {
                     serde_json::Value::String(s) => s.clone(),
                     other => other.to_string(),
                 };
-                ToolCall { id, name, arguments }
+                ToolCall {
+                    id,
+                    name,
+                    arguments,
+                }
             })
             .collect();
     }
@@ -162,7 +166,11 @@ pub fn extract_tool_calls(response: &serde_json::Value) -> Vec<ToolCall> {
                 let name = c["function"]["name"].as_str().unwrap_or("").to_string();
                 // Ollama arguments is a JSON object
                 let arguments = c["function"]["arguments"].to_string();
-                ToolCall { id, name, arguments }
+                ToolCall {
+                    id,
+                    name,
+                    arguments,
+                }
             })
             .collect();
     }

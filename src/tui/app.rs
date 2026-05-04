@@ -12,7 +12,7 @@ use crate::registry::{ModelEntry, Registry};
 
 #[derive(Debug, Clone)]
 pub struct ChatMessage {
-    pub role: String,   // "user" or "assistant"
+    pub role: String, // "user" or "assistant"
     pub content: String,
 }
 
@@ -49,8 +49,7 @@ impl Tab {
         Tab::Logs,
         Tab::Chat,
     ];
-    pub const NAMES: &'static [&'static str] =
-        &["Dashboard", "Models", "System", "Logs", "Chat"];
+    pub const NAMES: &'static [&'static str] = &["Dashboard", "Models", "System", "Logs", "Chat"];
 
     pub fn next(self) -> Self {
         match self {

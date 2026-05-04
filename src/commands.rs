@@ -334,8 +334,7 @@ pub async fn run_model(model: &str, backend_override: Option<&str>, cfg: &Config
             let (alloc_auto, vram_gb) = entry
                 .map(|e| (e.alloc_auto, e.vram_alloc_gb))
                 .unwrap_or((true, 0.0));
-            let n_gpu_layers =
-                crate::backends::llamacpp::vram_to_gpu_layers(alloc_auto, vram_gb);
+            let n_gpu_layers = crate::backends::llamacpp::vram_to_gpu_layers(alloc_auto, vram_gb);
 
             println!("Starting {BOLD}{model}{RESET} on port {port}…");
             print!("{DIM}Waiting for llama-server to be ready");
@@ -1144,15 +1143,23 @@ pub async fn doctor(cfg: &Config) -> Result<()> {
     // Ollama
     let ollama = OllamaBackend::new(&cfg.ollama.url);
     if ollama.health().await {
-        println!("  Ollama         {GREEN}✓{RESET}  running at {}", cfg.ollama.url);
+        println!(
+            "  Ollama         {GREEN}✓{RESET}  running at {}",
+            cfg.ollama.url
+        );
     } else {
         println!("  Ollama         {DIM}○{RESET}  not reachable (optional — needed for Ollama-backed models)");
     }
 
     // Config file
     match config::config_path() {
-        Ok(path) if path.exists() => println!("  config         {GREEN}✓{RESET}  {}", path.display()),
-        Ok(path) => println!("  config         {DIM}○{RESET}  {} (defaults in use — not yet written)", path.display()),
+        Ok(path) if path.exists() => {
+            println!("  config         {GREEN}✓{RESET}  {}", path.display())
+        }
+        Ok(path) => println!(
+            "  config         {DIM}○{RESET}  {} (defaults in use — not yet written)",
+            path.display()
+        ),
         Err(e) => {
             println!("  config         {RED}✗{RESET}  {e}");
             warnings += 1;
@@ -1175,9 +1182,15 @@ pub async fn doctor(cfg: &Config) -> Result<()> {
                 })
                 .unwrap_or(0);
             if dir.exists() {
-                println!("  models dir     {GREEN}✓{RESET}  {}  {DIM}({gguf_count} GGUF file(s)){RESET}", dir.display());
+                println!(
+                    "  models dir     {GREEN}✓{RESET}  {}  {DIM}({gguf_count} GGUF file(s)){RESET}",
+                    dir.display()
+                );
             } else {
-                println!("  models dir     {DIM}○{RESET}  {} (does not exist yet)", dir.display());
+                println!(
+                    "  models dir     {DIM}○{RESET}  {} (does not exist yet)",
+                    dir.display()
+                );
             }
         }
         Err(e) => {
@@ -1200,7 +1213,10 @@ pub async fn doctor(cfg: &Config) -> Result<()> {
     for m in &reg.models {
         if let Some(ref path) = m.local_path {
             if !std::path::Path::new(path).exists() {
-                println!("  model file     {YELLOW}⚠{RESET}  '{}' missing: {DIM}{path}{RESET}", m.name);
+                println!(
+                    "  model file     {YELLOW}⚠{RESET}  '{}' missing: {DIM}{path}{RESET}",
+                    m.name
+                );
                 missing += 1;
                 warnings += 1;
             }
@@ -1220,7 +1236,10 @@ pub async fn doctor(cfg: &Config) -> Result<()> {
         );
         warnings += 1;
     } else if !live_procs.is_empty() {
-        println!("  proc registry  {GREEN}✓{RESET}  {} live background process(es)", live_procs.len());
+        println!(
+            "  proc registry  {GREEN}✓{RESET}  {} live background process(es)",
+            live_procs.len()
+        );
     } else {
         println!("  proc registry  {GREEN}✓{RESET}  no background processes");
     }
@@ -1239,7 +1258,10 @@ pub async fn doctor(cfg: &Config) -> Result<()> {
     if enabled_tools.is_empty() {
         println!("  tools          {DIM}○{RESET}  none enabled (optional — enable with: deepsage mcp enable shell)");
     } else {
-        println!("  tools          {GREEN}✓{RESET}  enabled: {}", enabled_tools.join(", "));
+        println!(
+            "  tools          {GREEN}✓{RESET}  enabled: {}",
+            enabled_tools.join(", ")
+        );
     }
 
     print_hr();
@@ -1335,7 +1357,10 @@ pub async fn update_models(model: Option<&str>, check_only: bool, cfg: &Config) 
     }
 
     if check_only {
-        println!("{} model(s) can be updated. Run `deepsage update` to download.", outdated.len());
+        println!(
+            "{} model(s) can be updated. Run `deepsage update` to download.",
+            outdated.len()
+        );
         return Ok(());
     }
 
@@ -1382,7 +1407,10 @@ pub async fn update_models(model: Option<&str>, check_only: bool, cfg: &Config) 
     }
 
     registry::save(&reg)?;
-    println!("\n\x1b[32mDone.\x1b[0m  {} model(s) updated.", outdated.len());
+    println!(
+        "\n\x1b[32mDone.\x1b[0m  {} model(s) updated.",
+        outdated.len()
+    );
     Ok(())
 }
 
@@ -1393,7 +1421,10 @@ pub fn mcp_cmd(sub: &MpcSubcommand, cfg: Config) -> Result<()> {
         MpcSubcommand::List => {
             println!("{BOLD}{CYAN} MCP / Tool Integration{RESET}");
             print_hr();
-            println!("{BOLD}{:<14} {:<10} {:<}{RESET}", "Tool", "Status", "Description");
+            println!(
+                "{BOLD}{:<14} {:<10} {:<}{RESET}",
+                "Tool", "Status", "Description"
+            );
             print_hr();
             for t in crate::tools::ALL_TOOLS {
                 let enabled = cfg.tools.enabled.iter().any(|e| e == t.name);
@@ -1414,11 +1445,7 @@ pub fn mcp_cmd(sub: &MpcSubcommand, cfg: Config) -> Result<()> {
         MpcSubcommand::Enable { tool } => {
             let valid: Vec<&str> = crate::tools::ALL_TOOLS.iter().map(|t| t.name).collect();
             if !valid.contains(&tool.as_str()) {
-                bail!(
-                    "unknown tool '{}'. Available: {}",
-                    tool,
-                    valid.join(", ")
-                );
+                bail!("unknown tool '{}'. Available: {}", tool, valid.join(", "));
             }
             let mut cfg = cfg;
             if !cfg.tools.enabled.contains(tool) {

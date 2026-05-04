@@ -325,8 +325,7 @@ async fn do_chat_stream(
             let resp = match client.post(&url).json(&body).send().await {
                 Ok(r) => r,
                 Err(e) => {
-                    let _ =
-                        tx.send(ChatToken::Error(format!("llama-server not reachable: {e}")));
+                    let _ = tx.send(ChatToken::Error(format!("llama-server not reachable: {e}")));
                     return;
                 }
             };
@@ -414,8 +413,7 @@ async fn call_non_streaming(
 
 fn summarise_args(args_json: &str) -> String {
     // Show the argument values in a compact form: key=val, key=val
-    if let Ok(obj) = serde_json::from_str::<serde_json::Map<String, serde_json::Value>>(args_json)
-    {
+    if let Ok(obj) = serde_json::from_str::<serde_json::Map<String, serde_json::Value>>(args_json) {
         let pairs: Vec<String> = obj
             .iter()
             .map(|(k, v)| {
