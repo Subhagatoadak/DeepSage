@@ -29,7 +29,22 @@ pub fn resolve_binary(configured: &str) -> Option<String> {
     None
 }
 
-/// Spawn a llama-server process for the given model file.
+/// Convert a VRAM allocation to an n-gpu-layers value for llama-server.
+///
+/// alloc_auto=true  → 999 (let llama-server use all available VRAM)
+/// manual + vram>0  → estimate layers from budget (~145 MB/layer for Q4_K_M 7B)
+/// manual + vram=0  → 0 (CPU-only)
+pub fn vram_to_gpu_layers(alloc_auto: bool, vram_alloc_gb: f32) -> u32 {
+    if alloc_auto {
+        999
+    } else if vram_alloc_gb > 0.0 {
+        ((vram_alloc_gb * 1000.0 / 145.0) as u32).min(999)
+    } else {
+        0
+    }
+}
+
+/// Spawn a llama-server that inherits parent stdio (used by `deepsage serve`).
 pub fn spawn_server(
     binary: &str,
     model_path: &Path,
@@ -53,7 +68,43 @@ pub fn spawn_server(
         ])
         .spawn()
         .with_context(|| {
-            format!("failed to spawn '{binary}'\nInstall with: brew install llama.cpp")
+            format!(
+    "failed to spawn '{binary}'\nInstall llama.cpp:\n  macOS/Linux:  brew install llama.cpp\n  Windows:      scoop install llama-cpp  OR  choco install llama-cpp"
+)
+        })
+}
+
+/// Spawn a detached llama-server (stdin/stdout/stderr → /dev/null).
+/// Used by `deepsage run` so the process outlives the CLI invocation.
+pub fn spawn_server_detached(
+    binary: &str,
+    model_path: &Path,
+    host: &str,
+    port: u16,
+    n_gpu_layers: u32,
+    ctx_size: u32,
+) -> Result<Child> {
+    Command::new(binary)
+        .args([
+            "--model",
+            &model_path.to_string_lossy(),
+            "--host",
+            host,
+            "--port",
+            &port.to_string(),
+            "--n-gpu-layers",
+            &n_gpu_layers.to_string(),
+            "--ctx-size",
+            &ctx_size.to_string(),
+        ])
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .with_context(|| {
+            format!(
+    "failed to spawn '{binary}'\nInstall llama.cpp:\n  macOS/Linux:  brew install llama.cpp\n  Windows:      scoop install llama-cpp  OR  choco install llama-cpp"
+)
         })
 }
 
@@ -80,6 +131,20 @@ pub async fn wait_for_ready(host: &str, port: u16, timeout_secs: u64) -> bool {
         tokio::time::sleep(std::time::Duration::from_millis(500)).await;
     }
     false
+}
+
+/// Scan from `start` upward until a TCP port is free, skipping `in_use` list.
+pub fn find_free_port(start: u16, in_use: &[u16]) -> u16 {
+    let mut port = start;
+    loop {
+        if !in_use.contains(&port) && std::net::TcpListener::bind(("127.0.0.1", port)).is_ok() {
+            return port;
+        }
+        port = port.wrapping_add(1);
+        if port < start {
+            return start; // wrapped all the way around, give up
+        }
+    }
 }
 
 type ProcessMap = Arc<Mutex<HashMap<String, Child>>>;
@@ -126,7 +191,7 @@ impl LlamaCppBackend {
     }
 
     /// Spawn llama-server for a model. Returns the port it is listening on.
-    pub fn run(&self, model_path: &Path, vram_gb: f32, ctx_size: u32) -> Result<u16> {
+    pub fn run(&self, model_path: &Path, alloc_auto: bool, vram_gb: f32, ctx_size: u32) -> Result<u16> {
         let key = model_path.to_string_lossy().to_string();
         let mut processes = self.processes.lock().unwrap();
 
@@ -135,7 +200,7 @@ impl LlamaCppBackend {
         }
 
         let port = self.next_free_port(&processes);
-        let n_gpu_layers = if vram_gb > 0.0 { 999 } else { 0 };
+        let n_gpu_layers = vram_to_gpu_layers(alloc_auto, vram_gb);
 
         let child = Command::new(&self.server_binary)
             .args([

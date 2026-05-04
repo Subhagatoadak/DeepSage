@@ -1,6 +1,7 @@
 use anyhow::{bail, Context, Result};
 use futures_util::StreamExt;
 use serde::Deserialize;
+use sha2::{Digest, Sha256};
 use std::path::PathBuf;
 use tokio::io::AsyncWriteExt;
 
@@ -12,7 +13,20 @@ pub struct HfSibling {
     pub size: Option<u64>,
 }
 
-/// List all files in a HuggingFace repo, returning GGUF files first.
+/// An entry from the HuggingFace tree API (used for SHA256 lookup).
+#[derive(Debug, Deserialize)]
+struct HfTreeEntry {
+    path: String,
+    #[serde(default)]
+    lfs: Option<HfLfs>,
+}
+
+#[derive(Debug, Deserialize)]
+struct HfLfs {
+    oid: String, // "sha256:<hex>"
+}
+
+/// List all GGUF files in a HuggingFace repo.
 pub async fn hf_list_files(
     repo: &str,
     token: Option<&str>,
@@ -31,17 +45,62 @@ pub async fn hf_list_files(
     Ok(gguf)
 }
 
-/// Download a single file from HuggingFace, reporting progress via callback.
-///
-/// `progress_cb(downloaded_bytes, total_bytes_option)`
+/// Fetch the SHA-256 hex digest of a specific file in a HuggingFace repo
+/// by reading its LFS metadata from the tree API.
+pub async fn hf_file_sha256(
+    repo: &str,
+    filename: &str,
+    token: Option<&str>,
+    endpoint: &str,
+) -> Result<String> {
+    let url = format!("{endpoint}/api/models/{repo}/tree/main");
+    let client = build_client(token)?;
+    let entries: Vec<HfTreeEntry> = client
+        .get(&url)
+        .send()
+        .await?
+        .json()
+        .await
+        .context("failed to parse HF tree API response")?;
+
+    for entry in &entries {
+        if entry.path == filename {
+            if let Some(lfs) = &entry.lfs {
+                let sha = lfs.oid.strip_prefix("sha256:").unwrap_or(&lfs.oid);
+                return Ok(sha.to_string());
+            }
+            bail!("'{filename}' found in '{repo}' but has no LFS metadata (not a binary file?)");
+        }
+    }
+    bail!("'{filename}' not found in '{repo}' tree")
+}
+
+/// Download a file from HuggingFace and return its local path.
 pub async fn hf_download<F>(
     repo: &str,
     filename: &str,
     dest_dir: &PathBuf,
     token: Option<&str>,
     endpoint: &str,
-    mut progress_cb: F,
+    progress_cb: F,
 ) -> Result<PathBuf>
+where
+    F: FnMut(u64, Option<u64>),
+{
+    let (path, _sha256) =
+        hf_download_with_hash(repo, filename, dest_dir, token, endpoint, progress_cb).await?;
+    Ok(path)
+}
+
+/// Download a file from HuggingFace; returns `(local_path, sha256_hex)`.
+pub async fn hf_download_with_hash<F>(
+    repo: &str,
+    filename: &str,
+    dest_dir: &PathBuf,
+    token: Option<&str>,
+    endpoint: &str,
+    mut progress_cb: F,
+) -> Result<(PathBuf, String)>
 where
     F: FnMut(u64, Option<u64>),
 {
@@ -55,16 +114,35 @@ where
     let mut file = tokio::fs::File::create(&dest).await?;
     let mut downloaded: u64 = 0;
     let mut stream = resp.bytes_stream();
+    let mut hasher = Sha256::new();
 
     while let Some(chunk) = stream.next().await {
         let chunk = chunk.context("stream error")?;
+        hasher.update(&chunk);
         file.write_all(&chunk).await?;
         downloaded += chunk.len() as u64;
         progress_cb(downloaded, total);
     }
 
     file.flush().await?;
-    Ok(dest)
+    let sha256 = format!("{:x}", hasher.finalize());
+    Ok((dest, sha256))
+}
+
+/// Compute the SHA-256 hex digest of a local file (blocking).
+pub fn sha256_file(path: &str) -> Result<String> {
+    use std::io::Read;
+    let mut f = std::fs::File::open(path).context("cannot open file for hashing")?;
+    let mut hasher = Sha256::new();
+    let mut buf = vec![0u8; 65_536];
+    loop {
+        let n = f.read(&mut buf)?;
+        if n == 0 {
+            break;
+        }
+        hasher.update(&buf[..n]);
+    }
+    Ok(format!("{:x}", hasher.finalize()))
 }
 
 /// Download from an arbitrary direct URL.
@@ -111,11 +189,7 @@ fn build_client(token: Option<&str>) -> Result<reqwest::Client> {
     Ok(builder.build()?)
 }
 
-/// Parse a source string into (repo, filename).
-/// Accepts formats:
-///   hf:owner/repo/filename.gguf
-///   hf:owner/repo  (list files)
-///   https://...    (direct URL)
+/// Parse a source string into a `DownloadSource`.
 pub enum DownloadSource {
     HuggingFace { repo: String, file: Option<String> },
     DirectUrl { url: String, filename: String },

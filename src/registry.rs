@@ -41,6 +41,9 @@ pub struct ModelEntry {
     pub alloc_auto: bool,
     pub active: bool,
     pub registered_at: String,
+    /// SHA-256 hex digest of the local GGUF file; used to detect upstream updates.
+    #[serde(default)]
+    pub sha256: Option<String>,
 }
 
 impl ModelEntry {
@@ -57,6 +60,7 @@ impl ModelEntry {
             alloc_auto: true,
             active: false,
             registered_at: Utc::now().to_rfc3339(),
+            sha256: None,
         }
     }
 }

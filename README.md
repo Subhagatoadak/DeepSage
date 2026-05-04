@@ -16,7 +16,7 @@ Configure, run, manage, and monitor open source LLM models — with hardware-awa
 
 ## Installation
 
-### Homebrew (macOS / Linux)
+### macOS / Linux — Homebrew
 
 ```bash
 brew install llmfit        # hardware detection dependency
@@ -24,10 +24,42 @@ brew tap subhagatoadak/deepsage
 brew install deepsage
 ```
 
-### From source
+### Windows — Scoop
+
+```powershell
+# Prerequisites
+scoop install llmfit       # hardware detection
+scoop install ollama       # optional: Ollama backend
+scoop install llama-cpp    # optional: llama.cpp backend
+
+# DeepSage
+scoop bucket add deepsage https://github.com/subhagatoadak/DeepSage
+scoop install deepsage
+```
+
+### Windows — Pre-built binary
+
+1. Download `deepsage-vX.Y.Z-x86_64-pc-windows-msvc.zip` from the [Releases](https://github.com/subhagatoadak/DeepSage/releases) page.
+2. Extract `deepsage.exe` and place it anywhere on your `PATH` (e.g. `C:\Users\<you>\bin\`).
+3. Open **PowerShell** or **Windows Terminal** and run:
+
+```powershell
+deepsage --version
+deepsage system      # detect hardware
+deepsage            # launch TUI
+```
+
+> **Note:** The `shell` tool in chat (`deepsage mcp enable shell`) runs commands via `cmd /C` on Windows. PowerShell-specific syntax (e.g. `Get-Process`) won't work — use standard `cmd` commands or enable WSL for full Unix compatibility.
+
+### From source (all platforms)
 
 ```bash
+# macOS/Linux
 brew install llmfit
+cargo install --path .
+
+# Windows (PowerShell)
+scoop install llmfit
 cargo install --path .
 ```
 
@@ -188,15 +220,21 @@ port = 8080
 endpoint = "https://huggingface.co"
 ```
 
-Model files are stored in `~/.local/share/deepsage/models/` (Linux) or `~/Library/Application Support/deepsage/models/` (macOS).
+Model files and config are stored in platform-appropriate directories:
+
+| Platform | Config | Data / Models |
+| --- | --- | --- |
+| Linux | `~/.config/deepsage/` | `~/.local/share/deepsage/models/` |
+| macOS | `~/Library/Application Support/deepsage/` | `~/Library/Application Support/deepsage/models/` |
+| Windows | `%APPDATA%\deepsage\` | `%APPDATA%\deepsage\data\models\` |
 
 ## Requirements
 
-| Dependency | Purpose | Install |
-| --- | --- | --- |
-| [llmfit](https://github.com/AlexsJones/llmfit) | Hardware detection & model scoring | `brew install llmfit` |
-| [Ollama](https://ollama.com) *(optional)* | Pull and serve models via API | [ollama.com](https://ollama.com) |
-| [llama.cpp](https://github.com/ggerganov/llama.cpp) *(optional)* | Run GGUF models locally | `brew install llama.cpp` |
+| Dependency | Purpose | macOS/Linux | Windows |
+| --- | --- | --- | --- |
+| [llmfit](https://github.com/AlexsJones/llmfit) | Hardware detection & model scoring | `brew install llmfit` | `scoop install llmfit` |
+| [Ollama](https://ollama.com) *(optional)* | Pull and serve models via API | [ollama.com](https://ollama.com) | [ollama.com](https://ollama.com) |
+| [llama.cpp](https://github.com/ggerganov/llama.cpp) *(optional)* | Run GGUF models locally | `brew install llama.cpp` | `scoop install llama-cpp` |
 
 ## Building from source
 
