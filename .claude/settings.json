@@ -20,7 +20,8 @@
       "Read(//Users/subhagatoadak/**)",
       "Bash(cargo clippy *)",
       "Bash(deepsage --version)",
-      "Bash(cargo fmt *)"
+      "Bash(cargo fmt *)",
+      "Bash(gh release create v0.0.1 --title 'v0.0.1 — Initial Release' --notes ' *)"
     ]
   }
 }
