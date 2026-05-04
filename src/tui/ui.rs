@@ -33,6 +33,7 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
         Tab::Models => draw_models(frame, chunks[2], app),
         Tab::System => draw_system(frame, chunks[2], app),
         Tab::Logs => draw_logs(frame, chunks[2], app),
+        Tab::Chat => draw_chat(frame, chunks[2], app),
     }
     draw_statusbar(frame, chunks[3], app);
 }
@@ -260,7 +261,6 @@ fn draw_recommendations(frame: &mut Frame, area: Rect, app: &mut App) {
 
     let table = Table::new(
         rows.into_iter().chain(placeholder).collect::<Vec<_>>(),
-        // #  Model  Fit  Score  VRAM  TPS  Quant  Runtime
         [
             Constraint::Length(3),
             Constraint::Min(22),
@@ -464,6 +464,111 @@ fn draw_logs(frame: &mut Frame, area: Rect, app: &App) {
     frame.render_widget(para, area);
 }
 
+// ── Chat tab ──────────────────────────────────────────────────────────────────
+
+fn draw_chat(frame: &mut Frame, area: Rect, app: &App) {
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Min(0),    // message history
+            Constraint::Length(3), // input bar
+        ])
+        .split(area);
+
+    // Build message history lines
+    let mut lines: Vec<Line> = Vec::new();
+    for msg in &app.chat_messages {
+        let (label, color, dim_content) = match msg.role.as_str() {
+            "user" => ("You   ", ACCENT, false),
+            "assistant" => ("AI    ", GOOD, false),
+            "tool_call" => ("Tool▶ ", WARN, true),
+            "tool_result" => ("Tool← ", Color::Magenta, true),
+            _ => ("      ", DIM, true),
+        };
+        lines.push(Line::from(Span::styled(
+            format!("{label}:"),
+            Style::default().fg(color).add_modifier(Modifier::BOLD),
+        )));
+        // Split multi-line content into separate lines
+        for content_line in msg.content.lines() {
+            let span = if dim_content {
+                Span::styled(format!("  {content_line}"), Style::default().fg(DIM))
+            } else {
+                Span::raw(format!("  {content_line}"))
+            };
+            lines.push(Line::from(span));
+        }
+        // Blinking cursor while streaming into empty assistant bubble
+        if msg.content.is_empty() && msg.role == "assistant" {
+            lines.push(Line::from(Span::styled("  ▋", Style::default().fg(GOOD))));
+        }
+        lines.push(Line::from(""));
+    }
+
+    if lines.is_empty() {
+        let active_model = app
+            .registry
+            .models
+            .iter()
+            .find(|m| m.active)
+            .map(|m| m.name.as_str())
+            .unwrap_or("none");
+        lines.push(Line::from(Span::styled(
+            format!("  Active model: {active_model}  — press i to start chatting"),
+            Style::default().fg(DIM),
+        )));
+    }
+
+    let history_title = if app.chat_waiting {
+        " Chat ● Thinking… "
+    } else {
+        " Chat "
+    };
+
+    let history = Paragraph::new(lines)
+        .block(
+            Block::default()
+                .title(history_title)
+                .borders(Borders::ALL)
+                .border_style(if app.chat_waiting {
+                    Style::default().fg(WARN)
+                } else {
+                    Style::default()
+                }),
+        )
+        .wrap(Wrap { trim: false })
+        .scroll((app.chat_scroll, 0));
+    frame.render_widget(history, chunks[0]);
+
+    // Input bar
+    let (input_border_style, input_title, cursor) = if app.chat_active {
+        (
+            Style::default().fg(ACCENT),
+            " Message (Enter to send, Esc to cancel) ",
+            "_",
+        )
+    } else if app.chat_waiting {
+        (Style::default().fg(DIM), " Waiting for response… ", "")
+    } else {
+        (Style::default().fg(DIM), " Message (press i to type) ", "")
+    };
+
+    let input_text = format!("{}{}", app.chat_input, cursor);
+    let input = Paragraph::new(input_text)
+        .style(if app.chat_active {
+            Style::default().fg(Color::White)
+        } else {
+            Style::default().fg(DIM)
+        })
+        .block(
+            Block::default()
+                .title(input_title)
+                .borders(Borders::ALL)
+                .border_style(input_border_style),
+        );
+    frame.render_widget(input, chunks[1]);
+}
+
 // ── Status bar ────────────────────────────────────────────────────────────────
 
 fn draw_statusbar(frame: &mut Frame, area: Rect, app: &App) {
@@ -473,7 +578,12 @@ fn draw_statusbar(frame: &mut Frame, area: Rect, app: &App) {
         .map(|(m, _)| m.as_str())
         .unwrap_or("");
 
-    let hints = " q:Quit  Tab:Next  r:Run  s:Stop  p:Pull  d:Del  /:Search  PgUp/Dn:Scroll ";
+    let hints = match app.active_tab {
+        Tab::Chat if app.chat_active => " Enter:Send  Esc:Cancel input ",
+        Tab::Chat => " i:Type  q:Quit  Tab:Next  PgUp/Dn:Scroll ",
+        _ => " q:Quit  Tab:Next  r:Run  s:Stop  p:Pull  d:Del  /:Search  PgUp/Dn:Scroll ",
+    };
+
     let span = if !msg.is_empty() {
         Line::from(vec![
             Span::styled(hints, Style::default().fg(DIM)),

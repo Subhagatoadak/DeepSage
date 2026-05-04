@@ -1,6 +1,5 @@
 use anyhow::{bail, Result};
 
-use crate::backends::llamacpp::LlamaCppBackend;
 use crate::backends::ollama::OllamaBackend;
 use crate::config::{self, Config};
 use crate::download::{self, DownloadSource};
@@ -283,44 +282,92 @@ pub fn set_alloc(
 // ── run ───────────────────────────────────────────────────────────────────────
 
 pub async fn run_model(model: &str, backend_override: Option<&str>, cfg: &Config) -> Result<()> {
+    use std::io::Write;
+
     let reg = registry::load().unwrap_or_default();
     let entry = reg.get(model);
-    let backend = backend_override
+    let backend_name = backend_override
         .or_else(|| entry.map(|e| e.backend.as_str()))
         .unwrap_or(&cfg.default_backend);
 
-    match backend {
+    match backend_name {
         "ollama" => {
             let ollama = OllamaBackend::new(&cfg.ollama.url);
             if !ollama.health().await {
                 bail!("Ollama not running. Start it with: ollama serve");
             }
-            println!("Starting {BOLD}{model}{RESET} via Ollama…");
-            // ollama keeps models loaded — just generate a ping to load it
-            println!("{DIM}Model will load on first inference request.{RESET}");
+            println!("{BOLD}{model}{RESET} will load on first inference request.");
             println!("Endpoint: {}/api/generate", cfg.ollama.url);
         }
         "llamacpp" => {
-            let model_path = if let Some(e) = entry {
-                e.local_path.as_ref().map(std::path::PathBuf::from)
-            } else {
-                None
-            };
+            // Check if already tracked and alive
+            let procs = crate::proc_registry::load();
+            if let Some(e) = procs.get(model) {
+                if crate::proc_registry::is_pid_alive(e.pid) {
+                    println!(
+                        "{BOLD}{model}{RESET} is already running on http://127.0.0.1:{} (PID {})",
+                        e.port, e.pid
+                    );
+                    return Ok(());
+                }
+            }
+
+            let model_path = entry
+                .and_then(|e| e.local_path.as_ref())
+                .map(std::path::PathBuf::from);
             let Some(path) = model_path else {
-                bail!("llama.cpp model has no local path. Download it first: deepsage download hf:owner/repo/file.gguf");
+                bail!(
+                    "llama.cpp model has no local path.\n\
+                     Download it first: deepsage pick  (or deepsage download hf:owner/repo/file.gguf)"
+                );
             };
-            let backend = LlamaCppBackend::new(
-                &cfg.llamacpp.server_binary,
-                config::models_dir()?,
-                &cfg.llamacpp.host,
-                cfg.llamacpp.port,
-            );
-            let vram = entry.map(|e| e.vram_alloc_gb).unwrap_or(0.0);
-            let port = backend.run(&path, vram, 4096)?;
+
+            let binary = crate::backends::llamacpp::resolve_binary(&cfg.llamacpp.server_binary)
+                .ok_or_else(|| {
+                    anyhow::anyhow!("llama-server not found.\nInstall with: brew install llama.cpp")
+                })?;
+
+            // Allocate a free port, avoiding ports in use by other proc-registry entries
+            let used_ports: Vec<u16> = procs.values().map(|e| e.port).collect();
+            let port = crate::backends::llamacpp::find_free_port(cfg.llamacpp.port, &used_ports);
+
+            let (alloc_auto, vram_gb) = entry
+                .map(|e| (e.alloc_auto, e.vram_alloc_gb))
+                .unwrap_or((true, 0.0));
+            let n_gpu_layers = crate::backends::llamacpp::vram_to_gpu_layers(alloc_auto, vram_gb);
+
+            println!("Starting {BOLD}{model}{RESET} on port {port}…");
+            print!("{DIM}Waiting for llama-server to be ready");
+            std::io::stdout().flush()?;
+
+            let child = crate::backends::llamacpp::spawn_server_detached(
+                &binary,
+                &path,
+                "127.0.0.1",
+                port,
+                n_gpu_layers,
+                4096,
+            )?;
+            let pid = child.id();
+            // child drops here; the process keeps running (stdio is /dev/null)
+            drop(child);
+
+            if !crate::backends::llamacpp::wait_for_ready("127.0.0.1", port, 60).await {
+                bail!("llama-server did not become ready within 60 s.\nCheck that the model file is valid.");
+            }
+            println!(" ✓{RESET}");
+
+            crate::proc_registry::register_proc(crate::proc_registry::ProcEntry {
+                model_name: model.to_string(),
+                pid,
+                port,
+                model_path: path.to_string_lossy().into_owned(),
+            })?;
+
             println!(
-                "Started {BOLD}{model}{RESET} on http://{}:{port}",
-                cfg.llamacpp.host
+                "Running  {BOLD}{model}{RESET}  →  http://127.0.0.1:{port}/v1/chat/completions"
             );
+            println!("{DIM}Stop with: deepsage stop {model}{RESET}");
         }
         other => bail!("unknown backend: {other}  (use 'ollama' or 'llamacpp')"),
     }
@@ -330,14 +377,63 @@ pub async fn run_model(model: &str, backend_override: Option<&str>, cfg: &Config
 // ── stop ──────────────────────────────────────────────────────────────────────
 
 pub async fn stop_model(model: &str, cfg: &Config) -> Result<()> {
-    // Ollama unloads models after inactivity.
-    // llama.cpp would require a persistent process registry (future work).
-    println!("{DIM}Ollama unloads models after inactivity.{RESET}");
-    println!("To force-unload, send a request with keep_alive=0:");
-    println!(
-        "  curl {}/api/generate -d '{{\"model\":\"{model}\",\"keep_alive\":0}}'",
-        cfg.ollama.url
-    );
+    // Try proc-registry first (covers llama.cpp processes launched by `deepsage run`)
+    if let Some(entry) = crate::proc_registry::remove_proc(model)? {
+        if crate::proc_registry::is_pid_alive(entry.pid) {
+            kill_process(entry.pid)?;
+            println!("Stopped {BOLD}{model}{RESET} (PID {}).", entry.pid);
+        } else {
+            println!("{BOLD}{model}{RESET} was no longer running.");
+        }
+        return Ok(());
+    }
+
+    // Fall back to Ollama keep_alive=0 unload
+    let reg = registry::load().unwrap_or_default();
+    if let Some(entry) = reg.get(model) {
+        if entry.backend == "ollama" {
+            let tag = match &entry.source {
+                registry::ModelSource::Ollama { tag } => tag.clone(),
+                _ => model.to_string(),
+            };
+            let client = reqwest::Client::builder()
+                .timeout(std::time::Duration::from_secs(5))
+                .build()?;
+            let _ = client
+                .post(format!("{}/api/generate", cfg.ollama.url))
+                .json(&serde_json::json!({ "model": tag, "keep_alive": 0 }))
+                .send()
+                .await;
+            println!("Unloaded {BOLD}{model}{RESET} from Ollama.");
+            return Ok(());
+        }
+    }
+
+    bail!(
+        "No running process found for '{model}'.\n\
+         Use `deepsage list` to check status, or `deepsage run {model}` to start it."
+    )
+}
+
+#[cfg(unix)]
+fn kill_process(pid: u32) -> Result<()> {
+    let status = std::process::Command::new("kill")
+        .args(["-TERM", &pid.to_string()])
+        .status()?;
+    if !status.success() {
+        // Escalate to SIGKILL if SIGTERM was rejected
+        let _ = std::process::Command::new("kill")
+            .args(["-9", &pid.to_string()])
+            .status();
+    }
+    Ok(())
+}
+
+#[cfg(not(unix))]
+fn kill_process(pid: u32) -> Result<()> {
+    std::process::Command::new("taskkill")
+        .args(["/PID", &pid.to_string(), "/F"])
+        .status()?;
     Ok(())
 }
 
@@ -589,7 +685,7 @@ pub async fn pick(n: usize, index: Option<usize>, cfg: &Config) -> Result<()> {
     let chosen_file = pick_best_quant(&files);
     println!("Auto-selected: {BOLD}{}{RESET}", chosen_file.filename);
 
-    // Download with progress
+    // Download with progress (also compute SHA256 for future update checks)
     let dest_dir = config::models_dir()?;
     let size_str = chosen_file
         .size
@@ -597,7 +693,7 @@ pub async fn pick(n: usize, index: Option<usize>, cfg: &Config) -> Result<()> {
         .unwrap_or_default();
     println!("Downloading{size_str}…");
     let short_name = chosen.display.clone();
-    let local_path = download::hf_download(
+    let (local_path, sha256_hex) = download::hf_download_with_hash(
         &gguf_repo,
         &chosen_file.filename,
         &dest_dir,
@@ -638,6 +734,7 @@ pub async fn pick(n: usize, index: Option<usize>, cfg: &Config) -> Result<()> {
     entry.local_path = Some(local_path.to_string_lossy().into_owned());
     entry.quantization = quant;
     entry.alloc_auto = true;
+    entry.sha256 = Some(sha256_hex);
     reg.register(entry);
     if no_active {
         reg.switch(&short_name);
@@ -1003,6 +1100,391 @@ pub async fn infer(prompt: &str, model_override: Option<&str>, cfg: &Config) -> 
         other => bail!("unknown backend '{other}'"),
     }
     Ok(())
+}
+
+// ── doctor ────────────────────────────────────────────────────────────────────
+
+pub async fn doctor(cfg: &Config) -> Result<()> {
+    const GREEN: &str = "\x1b[32m";
+    const YELLOW: &str = "\x1b[33m";
+    const RED: &str = "\x1b[31m";
+
+    println!("{BOLD}{CYAN} DeepSage Doctor{RESET}");
+    print_hr();
+    let mut warnings = 0u32;
+
+    // llama-server
+    match crate::backends::llamacpp::resolve_binary(&cfg.llamacpp.server_binary) {
+        Some(ref bin) => {
+            let ver = std::process::Command::new(bin)
+                .arg("--version")
+                .output()
+                .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+                .unwrap_or_else(|_| "unknown version".into());
+            println!("  llama-server   {GREEN}✓{RESET}  {bin}  {DIM}{ver}{RESET}");
+        }
+        None => {
+            println!("  llama-server   {YELLOW}⚠{RESET}  not found");
+            println!("    {DIM}Install: brew install llama.cpp{RESET}");
+            warnings += 1;
+        }
+    }
+
+    // llmfit
+    match crate::hardware::resolve(&cfg.llmfit_path) {
+        Some(ref bin) => println!("  llmfit         {GREEN}✓{RESET}  {bin}"),
+        None => {
+            println!("  llmfit         {YELLOW}⚠{RESET}  not found (hardware-aware recommendations unavailable)");
+            println!("    {DIM}Install: brew install llmfit{RESET}");
+            warnings += 1;
+        }
+    }
+
+    // Ollama
+    let ollama = OllamaBackend::new(&cfg.ollama.url);
+    if ollama.health().await {
+        println!(
+            "  Ollama         {GREEN}✓{RESET}  running at {}",
+            cfg.ollama.url
+        );
+    } else {
+        println!("  Ollama         {DIM}○{RESET}  not reachable (optional — needed for Ollama-backed models)");
+    }
+
+    // Config file
+    match config::config_path() {
+        Ok(path) if path.exists() => {
+            println!("  config         {GREEN}✓{RESET}  {}", path.display())
+        }
+        Ok(path) => println!(
+            "  config         {DIM}○{RESET}  {} (defaults in use — not yet written)",
+            path.display()
+        ),
+        Err(e) => {
+            println!("  config         {RED}✗{RESET}  {e}");
+            warnings += 1;
+        }
+    }
+
+    // Models directory
+    match config::models_dir() {
+        Ok(dir) => {
+            let gguf_count = std::fs::read_dir(&dir)
+                .map(|it| {
+                    it.filter_map(|e| e.ok())
+                        .filter(|e| {
+                            e.path()
+                                .extension()
+                                .and_then(|x| x.to_str())
+                                .is_some_and(|x| x == "gguf")
+                        })
+                        .count()
+                })
+                .unwrap_or(0);
+            if dir.exists() {
+                println!(
+                    "  models dir     {GREEN}✓{RESET}  {}  {DIM}({gguf_count} GGUF file(s)){RESET}",
+                    dir.display()
+                );
+            } else {
+                println!(
+                    "  models dir     {DIM}○{RESET}  {} (does not exist yet)",
+                    dir.display()
+                );
+            }
+        }
+        Err(e) => {
+            println!("  models dir     {RED}✗{RESET}  cannot determine: {e}");
+            warnings += 1;
+        }
+    }
+
+    // Registry
+    let reg = registry::load().unwrap_or_default();
+    let active_count = reg.models.iter().filter(|m| m.active).count();
+    println!(
+        "  registry       {GREEN}✓{RESET}  {} model(s) registered, {} active",
+        reg.models.len(),
+        active_count
+    );
+
+    // Model files
+    let mut missing = 0usize;
+    for m in &reg.models {
+        if let Some(ref path) = m.local_path {
+            if !std::path::Path::new(path).exists() {
+                println!(
+                    "  model file     {YELLOW}⚠{RESET}  '{}' missing: {DIM}{path}{RESET}",
+                    m.name
+                );
+                missing += 1;
+                warnings += 1;
+            }
+        }
+    }
+    if missing == 0 && reg.models.iter().any(|m| m.local_path.is_some()) {
+        println!("  model files    {GREEN}✓{RESET}  all local paths verified");
+    }
+
+    // Proc registry (stale PIDs)
+    let all_procs = crate::proc_registry::load();
+    let live_procs = crate::proc_registry::list_live();
+    let stale = all_procs.len().saturating_sub(live_procs.len());
+    if stale > 0 {
+        println!(
+            "  proc registry  {YELLOW}⚠{RESET}  {stale} stale entr(ies) cleaned automatically"
+        );
+        warnings += 1;
+    } else if !live_procs.is_empty() {
+        println!(
+            "  proc registry  {GREEN}✓{RESET}  {} live background process(es)",
+            live_procs.len()
+        );
+    } else {
+        println!("  proc registry  {GREEN}✓{RESET}  no background processes");
+    }
+
+    // HuggingFace token
+    if cfg.huggingface.token.is_some() {
+        println!("  hf token       {GREEN}✓{RESET}  configured");
+    } else {
+        println!("  hf token       {YELLOW}⚠{RESET}  not set — downloads may be rate-limited");
+        println!("    {DIM}Set with: deepsage config --set-hf-token <TOKEN>{RESET}");
+        warnings += 1;
+    }
+
+    // Tools
+    let enabled_tools = &cfg.tools.enabled;
+    if enabled_tools.is_empty() {
+        println!("  tools          {DIM}○{RESET}  none enabled (optional — enable with: deepsage mcp enable shell)");
+    } else {
+        println!(
+            "  tools          {GREEN}✓{RESET}  enabled: {}",
+            enabled_tools.join(", ")
+        );
+    }
+
+    print_hr();
+    if warnings == 0 {
+        println!("{GREEN}Everything looks good.{RESET}");
+    } else {
+        println!("{YELLOW}{warnings} warning(s) found.{RESET}");
+    }
+    Ok(())
+}
+
+// ── update ────────────────────────────────────────────────────────────────────
+
+pub async fn update_models(model: Option<&str>, check_only: bool, cfg: &Config) -> Result<()> {
+    use std::io::Write;
+
+    let reg = registry::load().unwrap_or_default();
+
+    // Pick models to check
+    let candidates: Vec<_> = reg
+        .models
+        .iter()
+        .filter(|m| {
+            model.is_none_or(|name| m.name == name)
+                && matches!(&m.source, registry::ModelSource::HuggingFace { .. })
+        })
+        .collect();
+
+    if candidates.is_empty() {
+        if let Some(name) = model {
+            bail!("no HuggingFace-backed model named '{name}' in registry");
+        } else {
+            println!("No HuggingFace models registered.  Use `deepsage pick` to add one.");
+            return Ok(());
+        }
+    }
+
+    println!("{BOLD}{CYAN} Update Check{RESET}");
+    print_hr();
+
+    let mut outdated: Vec<String> = vec![];
+
+    for m in &candidates {
+        let (repo, filename) = match &m.source {
+            registry::ModelSource::HuggingFace { repo, file } => (repo.as_str(), file.as_str()),
+            _ => unreachable!(),
+        };
+
+        print!("  {BOLD}{:<30}{RESET}", m.name);
+        std::io::stdout().flush()?;
+
+        // Fetch remote SHA256 from HF tree API
+        let remote_sha = match download::hf_file_sha256(
+            repo,
+            filename,
+            cfg.huggingface.token.as_deref(),
+            &cfg.huggingface.endpoint,
+        )
+        .await
+        {
+            Ok(s) => s,
+            Err(e) => {
+                println!("\x1b[33m⚠\x1b[0m  cannot check: {DIM}{e}{RESET}");
+                continue;
+            }
+        };
+
+        // Compare with stored SHA256 (or compute from local file if missing)
+        let local_sha = match &m.sha256 {
+            Some(s) => s.clone(),
+            None => m
+                .local_path
+                .as_deref()
+                .and_then(|p| download::sha256_file(p).ok())
+                .unwrap_or_default(),
+        };
+
+        if local_sha.is_empty() {
+            println!("\x1b[33m?\x1b[0m  no local file to compare");
+        } else if local_sha == remote_sha {
+            println!("\x1b[32m✓\x1b[0m  up to date");
+        } else {
+            println!("\x1b[33m↑\x1b[0m  update available");
+            outdated.push(m.name.clone());
+        }
+    }
+
+    print_hr();
+
+    if outdated.is_empty() {
+        println!("All models are up to date.");
+        return Ok(());
+    }
+
+    if check_only {
+        println!(
+            "{} model(s) can be updated. Run `deepsage update` to download.",
+            outdated.len()
+        );
+        return Ok(());
+    }
+
+    // Download updates
+    println!("\nUpdating {} model(s)…\n", outdated.len());
+    let mut reg = registry::load().unwrap_or_default();
+
+    for name in &outdated {
+        let entry = match reg.get(name).cloned() {
+            Some(e) => e,
+            None => continue,
+        };
+        let (repo, filename) = match &entry.source {
+            registry::ModelSource::HuggingFace { repo, file } => (repo.clone(), file.clone()),
+            _ => continue,
+        };
+
+        println!("{BOLD}Updating {name}{RESET}  ({DIM}{filename}{RESET})");
+        let dest_dir = config::models_dir()?;
+
+        let (path, sha256) = download::hf_download_with_hash(
+            &repo,
+            &filename,
+            &dest_dir,
+            cfg.huggingface.token.as_deref(),
+            &cfg.huggingface.endpoint,
+            |downloaded, total| {
+                let pct = total.map(|t| (downloaded * 100).checked_div(t).unwrap_or(0));
+                let mb = downloaded as f64 / 1e6;
+                match pct {
+                    Some(p) => print!("\r  {mb:.1} MB  {p:>3}%  "),
+                    None => print!("\r  {mb:.1} MB        "),
+                }
+                let _ = std::io::stdout().flush();
+            },
+        )
+        .await?;
+        println!("\n  Saved to {DIM}{}{RESET}", path.display());
+
+        if let Some(e) = reg.get_mut(name) {
+            e.local_path = Some(path.to_string_lossy().into_owned());
+            e.sha256 = Some(sha256);
+        }
+    }
+
+    registry::save(&reg)?;
+    println!(
+        "\n\x1b[32mDone.\x1b[0m  {} model(s) updated.",
+        outdated.len()
+    );
+    Ok(())
+}
+
+// ── mcp ───────────────────────────────────────────────────────────────────────
+
+pub fn mcp_cmd(sub: &MpcSubcommand, cfg: Config) -> Result<()> {
+    match sub {
+        MpcSubcommand::List => {
+            println!("{BOLD}{CYAN} MCP / Tool Integration{RESET}");
+            print_hr();
+            println!(
+                "{BOLD}{:<14} {:<10} {:<}{RESET}",
+                "Tool", "Status", "Description"
+            );
+            print_hr();
+            for t in crate::tools::ALL_TOOLS {
+                let enabled = cfg.tools.enabled.iter().any(|e| e == t.name);
+                let status = if enabled {
+                    "\x1b[32menabled\x1b[0m"
+                } else {
+                    "\x1b[2mdisabled\x1b[0m"
+                };
+                println!("{:<14} {:<18} {}", t.name, status, t.description);
+            }
+            println!();
+            if cfg.tools.enabled.is_empty() {
+                println!("{DIM}Enable a tool with: deepsage mcp enable <tool-name>{RESET}");
+            } else {
+                println!("{DIM}Active tools are injected into every chat session.{RESET}");
+            }
+        }
+        MpcSubcommand::Enable { tool } => {
+            let valid: Vec<&str> = crate::tools::ALL_TOOLS.iter().map(|t| t.name).collect();
+            if !valid.contains(&tool.as_str()) {
+                bail!("unknown tool '{}'. Available: {}", tool, valid.join(", "));
+            }
+            let mut cfg = cfg;
+            if !cfg.tools.enabled.contains(tool) {
+                cfg.tools.enabled.push(tool.clone());
+                config::save(&cfg)?;
+                println!("Enabled tool \x1b[32m{tool}\x1b[0m.");
+            } else {
+                println!("Tool '{tool}' is already enabled.");
+            }
+        }
+        MpcSubcommand::Disable { tool } => {
+            let mut cfg = cfg;
+            let before = cfg.tools.enabled.len();
+            cfg.tools.enabled.retain(|e| e != tool);
+            if cfg.tools.enabled.len() < before {
+                config::save(&cfg)?;
+                println!("Disabled tool '{tool}'.");
+            } else {
+                println!("Tool '{tool}' was not enabled.");
+            }
+        }
+    }
+    Ok(())
+}
+
+#[derive(Debug, clap::Subcommand)]
+pub enum MpcSubcommand {
+    /// List all available tools and their current status
+    List,
+    /// Enable a tool for chat sessions
+    Enable {
+        /// Tool name: shell, read_file, or web_fetch
+        tool: String,
+    },
+    /// Disable a tool
+    Disable {
+        /// Tool name to disable
+        tool: String,
+    },
 }
 
 // ── delete ────────────────────────────────────────────────────────────────────

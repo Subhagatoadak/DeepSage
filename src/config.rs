@@ -70,6 +70,14 @@ impl Default for HuggingFaceConfig {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct ToolsConfig {
+    /// Names of built-in tools the LLM may call during chat.
+    /// Valid values: "shell", "read_file", "web_fetch"
+    #[serde(default)]
+    pub enabled: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct Config {
     #[serde(default = "default_backend")]
     pub default_backend: String,
@@ -83,6 +91,8 @@ pub struct Config {
     pub llmfit_path: String,
     #[serde(default)]
     pub default_model: String,
+    #[serde(default)]
+    pub tools: ToolsConfig,
 }
 
 fn default_backend() -> String {

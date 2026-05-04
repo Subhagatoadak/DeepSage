@@ -537,7 +537,10 @@ pub async fn serve(host: &str, port: u16, cfg: Config) -> Result<()> {
                     )
                 })?;
 
-            let n_gpu_layers: u32 = if model.vram_alloc_gb > 0.0 { 999 } else { 0 };
+            let n_gpu_layers = crate::backends::llamacpp::vram_to_gpu_layers(
+                model.alloc_auto,
+                model.vram_alloc_gb,
+            );
             let internal_port = cfg.llamacpp.port;
 
             println!(

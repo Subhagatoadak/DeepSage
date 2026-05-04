@@ -7,8 +7,10 @@ mod config;
 mod download;
 mod hardware;
 mod monitor;
+mod proc_registry;
 mod registry;
 mod server;
+mod tools;
 mod tui;
 
 #[derive(Parser)]
@@ -180,6 +182,24 @@ enum Cmd {
         #[arg(long)]
         set_hf_token: Option<String>,
     },
+
+    /// Diagnose your DeepSage setup (binaries, Ollama, registry, model files)
+    Doctor,
+
+    /// Check for or download updates to registered HuggingFace models
+    Update {
+        /// Model name to update (defaults to all)
+        model: Option<String>,
+        /// Only report what is outdated without downloading
+        #[arg(long)]
+        check: bool,
+    },
+
+    /// Manage built-in tools the LLM can call during chat (MCP)
+    Mcp {
+        #[command(subcommand)]
+        sub: commands::MpcSubcommand,
+    },
 }
 
 #[tokio::main]
@@ -233,5 +253,10 @@ async fn main() -> Result<()> {
             set_ollama_url,
             set_hf_token,
         }) => commands::configure(set_backend, set_ollama_url, None, set_hf_token, cfg),
+        Some(Cmd::Doctor) => commands::doctor(&cfg).await,
+        Some(Cmd::Update { model, check }) => {
+            commands::update_models(model.as_deref(), check, &cfg).await
+        }
+        Some(Cmd::Mcp { sub }) => commands::mcp_cmd(&sub, cfg),
     }
 }

@@ -1,0 +1,23 @@
+{
+  "version": "0.1.0",
+  "description": "Manage and run open source LLM models with hardware-aware recommendations",
+  "homepage": "https://github.com/subhagatoadak/DeepSage",
+  "license": "MIT",
+  "architecture": {
+    "64bit": {
+      "url": "https://github.com/subhagatoadak/DeepSage/releases/download/v$version/deepsage-v$version-x86_64-pc-windows-msvc.zip",
+      "hash": "REPLACE_WITH_SHA256"
+    }
+  },
+  "bin": "deepsage.exe",
+  "checkver": {
+    "github": "https://github.com/subhagatoadak/DeepSage"
+  },
+  "autoupdate": {
+    "architecture": {
+      "64bit": {
+        "url": "https://github.com/subhagatoadak/DeepSage/releases/download/v$version/deepsage-v$version-x86_64-pc-windows-msvc.zip"
+      }
+    }
+  }
+}

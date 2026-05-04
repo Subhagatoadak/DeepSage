@@ -31,3 +31,4 @@ toml         = "0.8"
 uuid         = { version = "1", features = ["v4"] }
 which        = "6"
 chrono       = { version = "0.4", features = ["serde"] }
+sha2         = "0.10"

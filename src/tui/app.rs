@@ -8,39 +8,73 @@ use crate::hardware::{ModelRecommendation, SystemInfo};
 use crate::monitor::ResourceStats;
 use crate::registry::{ModelEntry, Registry};
 
+// ── Chat types ────────────────────────────────────────────────────────────────
+
+#[derive(Debug, Clone)]
+pub struct ChatMessage {
+    pub role: String, // "user" or "assistant"
+    pub content: String,
+}
+
+pub enum ChatToken {
+    /// Start a new assistant bubble (creates an empty assistant ChatMessage)
+    AssistantStart,
+    /// Append text to the current assistant bubble
+    Token(String),
+    /// Show a tool-call event inline (role = "tool_call")
+    ToolCall(String),
+    /// Show a tool-result event inline (role = "tool_result")
+    ToolResult(String),
+    Done,
+    Error(String),
+}
+
+// ── Tab ───────────────────────────────────────────────────────────────────────
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Tab {
     Dashboard = 0,
     Models = 1,
     System = 2,
     Logs = 3,
+    Chat = 4,
 }
 
 impl Tab {
     #[allow(dead_code)]
-    pub const ALL: &'static [Tab] = &[Tab::Dashboard, Tab::Models, Tab::System, Tab::Logs];
-    pub const NAMES: &'static [&'static str] = &["Dashboard", "Models", "System", "Logs"];
+    pub const ALL: &'static [Tab] = &[
+        Tab::Dashboard,
+        Tab::Models,
+        Tab::System,
+        Tab::Logs,
+        Tab::Chat,
+    ];
+    pub const NAMES: &'static [&'static str] = &["Dashboard", "Models", "System", "Logs", "Chat"];
 
     pub fn next(self) -> Self {
         match self {
             Tab::Dashboard => Tab::Models,
             Tab::Models => Tab::System,
             Tab::System => Tab::Logs,
-            Tab::Logs => Tab::Dashboard,
+            Tab::Logs => Tab::Chat,
+            Tab::Chat => Tab::Dashboard,
         }
     }
     pub fn prev(self) -> Self {
         match self {
-            Tab::Dashboard => Tab::Logs,
+            Tab::Dashboard => Tab::Chat,
             Tab::Models => Tab::Dashboard,
             Tab::System => Tab::Models,
             Tab::Logs => Tab::System,
+            Tab::Chat => Tab::Logs,
         }
     }
     pub fn index(self) -> usize {
         self as usize
     }
 }
+
+// ── App ───────────────────────────────────────────────────────────────────────
 
 pub struct App {
     pub should_quit: bool,
@@ -66,6 +100,16 @@ pub struct App {
     // Logs tab
     pub logs: Vec<String>,
     pub logs_scroll: u16,
+
+    // Chat tab
+    pub chat_messages: Vec<ChatMessage>,
+    pub chat_input: String,
+    pub chat_active: bool,
+    pub chat_waiting: bool,
+    pub chat_scroll: u16,
+    pub chat_rx: Option<tokio::sync::mpsc::UnboundedReceiver<ChatToken>>,
+    /// Set by handle_key when user presses Enter; consumed by the event loop.
+    pub pending_chat_send: Option<Vec<ChatMessage>>,
 
     // Status message shown in status bar
     pub status_msg: Option<(String, Instant)>,
@@ -93,6 +137,13 @@ impl App {
             search_mode: false,
             logs: vec!["DeepSage started.".into()],
             logs_scroll: 0,
+            chat_messages: vec![],
+            chat_input: String::new(),
+            chat_active: false,
+            chat_waiting: false,
+            chat_scroll: 0,
+            chat_rx: None,
+            pending_chat_send: None,
             status_msg: None,
             config,
             last_refresh: Instant::now() - Duration::from_secs(99),
@@ -106,7 +157,6 @@ impl App {
 
     pub fn log(&mut self, msg: impl Into<String>) {
         self.logs.push(msg.into());
-        // keep at most 500 lines
         if self.logs.len() > 500 {
             self.logs.drain(..self.logs.len() - 500);
         }
@@ -119,10 +169,17 @@ impl App {
     // ── Key handling ──────────────────────────────────────────────────────────
 
     pub fn handle_key(&mut self, key: KeyEvent) {
+        // Chat input mode captures all keys
+        if self.active_tab == Tab::Chat && self.chat_active {
+            self.handle_chat_input_key(key);
+            return;
+        }
+
         if self.search_mode {
             self.handle_search_key(key);
             return;
         }
+
         match key.code {
             KeyCode::Char('q') | KeyCode::Esc => self.should_quit = true,
             KeyCode::Tab => self.active_tab = self.active_tab.next(),
@@ -131,18 +188,61 @@ impl App {
             KeyCode::Char('2') => self.active_tab = Tab::Models,
             KeyCode::Char('3') => self.active_tab = Tab::System,
             KeyCode::Char('4') => self.active_tab = Tab::Logs,
+            KeyCode::Char('5') => self.active_tab = Tab::Chat,
             KeyCode::Down | KeyCode::Char('j') => self.next_row(),
             KeyCode::Up | KeyCode::Char('k') => self.prev_row(),
-            KeyCode::Char('/') => {
+            KeyCode::Char('/') if self.active_tab != Tab::Chat => {
                 self.search_mode = true;
                 self.search_query.clear();
+            }
+            // Enter chat input mode when on the Chat tab
+            KeyCode::Char('i') | KeyCode::Enter if self.active_tab == Tab::Chat => {
+                self.chat_active = true;
             }
             KeyCode::Char('r') => self.action_run_selected(),
             KeyCode::Char('s') => self.action_stop_selected(),
             KeyCode::Char('p') => self.action_pull_selected(),
             KeyCode::Char('d') => self.action_delete_selected(),
-            KeyCode::PageDown => self.logs_scroll = self.logs_scroll.saturating_add(10),
-            KeyCode::PageUp => self.logs_scroll = self.logs_scroll.saturating_sub(10),
+            KeyCode::PageDown => match self.active_tab {
+                Tab::Logs => self.logs_scroll = self.logs_scroll.saturating_add(10),
+                Tab::Chat => self.chat_scroll = self.chat_scroll.saturating_add(5),
+                _ => {}
+            },
+            KeyCode::PageUp => match self.active_tab {
+                Tab::Logs => self.logs_scroll = self.logs_scroll.saturating_sub(10),
+                Tab::Chat => self.chat_scroll = self.chat_scroll.saturating_sub(5),
+                _ => {}
+            },
+            _ => {}
+        }
+    }
+
+    fn handle_chat_input_key(&mut self, key: KeyEvent) {
+        match key.code {
+            KeyCode::Esc => {
+                self.chat_active = false;
+            }
+            KeyCode::Enter => {
+                let trimmed = self.chat_input.trim().to_string();
+                if !trimmed.is_empty() && !self.chat_waiting {
+                    self.chat_input.clear();
+                    self.chat_messages.push(ChatMessage {
+                        role: "user".into(),
+                        content: trimmed,
+                    });
+                    // Event loop will see this and spawn the streaming task
+                    self.pending_chat_send = Some(self.chat_messages.clone());
+                    self.chat_waiting = true;
+                    // Auto-scroll to bottom
+                    self.chat_scroll = u16::MAX / 2;
+                }
+            }
+            KeyCode::Backspace => {
+                self.chat_input.pop();
+            }
+            KeyCode::Char(c) if !key.modifiers.contains(KeyModifiers::CONTROL) => {
+                self.chat_input.push(c);
+            }
             _ => {}
         }
     }
